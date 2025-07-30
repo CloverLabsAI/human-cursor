@@ -1,4 +1,4 @@
-import type { ElementHandle, Page, BoundingBox, CDPSession, Protocol } from 'puppeteer'
+import type { ElementHandle, Page, CDPSession } from 'playwright'
 import debug from 'debug'
 import { type Vector, type TimedVector, bezierCurve, bezierCurveSpeed, direction, magnitude, origin, overshoot, add, clamp, scale, extrapolate } from './math'
 import { installMouseHelper } from './mouse-helper'
@@ -6,6 +6,14 @@ import { installMouseHelper } from './mouse-helper'
 export { installMouseHelper }
 
 const log = debug('ghost-cursor')
+
+// Playwright BoundingBox type
+export interface BoundingBox {
+  x: number
+  y: number
+  width: number
+  height: number
+}
 
 export interface BoxOptions {
   /**
@@ -107,7 +115,7 @@ export interface ClickOptions extends MoveOptions {
   /**
    * @default "left"
    */
-  readonly button?: Protocol.Input.MouseButton
+  readonly button?: 'left' | 'right' | 'middle'
   /**
    * @default 1
    */
@@ -207,65 +215,32 @@ const getRandomBoxPoint = ({ x, y, width, height }: BoundingBox, options?: Pick<
   }
 }
 
-/** The function signature to access the internal CDP client changed in puppeteer 14.4.1 */
-export const getCDPClient = (page: Page): CDPSession => (typeof (page as any)._client === 'function' ? (page as any)._client() : (page as any)._client)
+/** Get the CDP session for Playwright */
+export const getCDPClient = async (page: Page): Promise<CDPSession> => await page.context().newCDPSession(page)
 
 /** Get a random point on a browser window */
 export const getRandomPagePoint = async (page: Page): Promise<Vector> => {
-  const targetId: string = (page.target() as any)._targetId
-  const window = await getCDPClient(page).send('Browser.getWindowForTarget', { targetId })
+  const viewport = page.viewportSize()
+  if (viewport == null) {
+    return { x: 0, y: 0 }
+  }
   return getRandomBoxPoint({
     x: origin.x,
     y: origin.y,
-    width: window.bounds.width ?? 0,
-    height: window.bounds.height ?? 0
+    width: viewport.width,
+    height: viewport.height
   })
 }
 
-/** Get correct position of Inline elements (elements like `<a>`). Has fallback. */
+/** Get correct position of elements. Uses Playwright's boundingBox method. */
 export const getElementBox = async (page: Page, element: ElementHandle, relativeToMainFrame: boolean = true): Promise<BoundingBox> => {
   try {
-    const objectId = element.remoteObject().objectId
-    if (objectId === undefined) throw new Error('Element objectId is undefined, falling back to alternative methods')
-
-    const quads = await getCDPClient(page).send('DOM.getContentQuads', { objectId })
-    const elementBox: BoundingBox = {
-      x: quads.quads[0][0],
-      y: quads.quads[0][1],
-      width: quads.quads[0][4] - quads.quads[0][0],
-      height: quads.quads[0][5] - quads.quads[0][1]
-    }
-    if (!relativeToMainFrame) {
-      const elementFrame = await element.contentFrame()
-      const iframes = await elementFrame?.parentFrame()?.$$('xpath/.//iframe')
-      if (iframes !== undefined && iframes !== null) {
-        let frame: ElementHandle<Node> | undefined
-        for (const iframe of iframes) {
-          if ((await iframe.contentFrame()) === elementFrame) {
-            frame = iframe
-          }
-        }
-        if (frame !== undefined && frame != null) {
-          const frameBox = await frame.boundingBox()
-          if (frameBox !== null) {
-            elementBox.x -= frameBox.x
-            elementBox.y -= frameBox.y
-          }
-        }
-      }
-    }
-
+    const elementBox = await element.boundingBox()
+    if (elementBox === null) throw new Error('Element boundingBox is null, falling back to getBoundingClientRect')
     return elementBox
   } catch {
-    try {
-      log('Quads not found, trying regular boundingBox')
-      const elementBox = await element.boundingBox()
-      if (elementBox === null) throw new Error('Element boundingBox is null, falling back to getBoundingClientRect')
-      return elementBox
-    } catch {
-      log('BoundingBox null, using getBoundingClientRect')
-      return await element.evaluate(el => el.getBoundingClientRect() as BoundingBox)
-    }
+    log('BoundingBox null, using getBoundingClientRect')
+    return await element.evaluate((el: Element) => el.getBoundingClientRect() as BoundingBox)
   }
 }
 
@@ -400,8 +375,6 @@ export const createCursor = (
 
   /** Move the mouse over a number of vectors */
   const tracePath = async (vectors: Iterable<Vector | TimedVector>, abortOnMove: boolean = false): Promise<void> => {
-    const cdpClient = getCDPClient(page)
-
     for (const v of vectors) {
       try {
         // In case this is called from random mouse movements and the users wants to move the mouse, abort
@@ -409,20 +382,11 @@ export const createCursor = (
           return
         }
 
-        const dispatchParams: Protocol.Input.DispatchMouseEventRequest = {
-          type: 'mouseMoved',
-          x: v.x,
-          y: v.y
-        }
-
-        if ('timestamp' in v) dispatchParams.timestamp = v.timestamp
-
-        await cdpClient.send('Input.dispatchMouseEvent', dispatchParams)
-
+        await page.mouse.move(v.x, v.y)
         previous = v
       } catch (error) {
-        // Exit function if the browser is no longer connected
-        if (!page.browser().isConnected()) return
+        // Exit function if the page is closed
+        if (page.isClosed()) return
 
         log('Warning: could not move mouse, error message:', error)
       }
@@ -491,16 +455,9 @@ export const createCursor = (
       try {
         await delay(optionsResolved.hesitate)
 
-        const cdpClient = getCDPClient(page)
-        const dispatchParams: Omit<Protocol.Input.DispatchMouseEventRequest, 'type'> = {
-          x: previous.x,
-          y: previous.y,
-          button: optionsResolved.button,
-          clickCount: optionsResolved.clickCount
-        }
-        await cdpClient.send('Input.dispatchMouseEvent', { ...dispatchParams, type: 'mousePressed' })
+        await page.mouse.down({ button: optionsResolved.button })
         await delay(optionsResolved.waitForClick)
-        await cdpClient.send('Input.dispatchMouseEvent', { ...dispatchParams, type: 'mouseReleased' })
+        await page.mouse.up({ button: optionsResolved.button })
       } catch (error) {
         log('Warning: could not click mouse, error message:', error)
       }
@@ -678,13 +635,9 @@ export const createCursor = (
       }
 
       try {
-        const cdpClient = getCDPClient(page)
-
         if (scrollSpeed === 100 && optionsResolved.inViewportMargin <= 0) {
           try {
-            const { objectId } = elem.remoteObject()
-            if (objectId === undefined) throw new Error()
-            await cdpClient.send('DOM.scrollIntoViewIfNeeded', { objectId })
+            await elem.scrollIntoViewIfNeeded()
           } catch {
             await manuallyScroll()
           }
@@ -694,7 +647,7 @@ export const createCursor = (
       } catch (e) {
         // use regular JS scroll method as a fallback
         log('Falling back to JS scroll method', e)
-        await elem.evaluate(e =>
+        await elem.evaluate((e: Element) =>
           e.scrollIntoView({
             block: 'center',
             behavior: scrollSpeed < 90 ? 'smooth' : undefined
@@ -713,8 +666,6 @@ export const createCursor = (
       } satisfies ScrollOptions
 
       const scrollSpeed = clamp(optionsResolved.scrollSpeed, 1, 100)
-
-      const cdpClient = getCDPClient(page)
 
       let deltaX = delta.x ?? 0
       let deltaY = delta.y ?? 0
@@ -748,13 +699,7 @@ export const createCursor = (
         deltaX = deltaX * xDirection
         deltaY = deltaY * yDirection
 
-        await cdpClient.send('Input.dispatchMouseEvent', {
-          type: 'mouseWheel',
-          deltaX,
-          deltaY,
-          x: previous.x,
-          y: previous.y
-        } satisfies Protocol.Input.DispatchMouseEventRequest)
+        await page.mouse.wheel(deltaX, deltaY)
       }
 
       await delay(optionsResolved.scrollDelay)
@@ -810,12 +755,10 @@ export const createCursor = (
       let elem: ElementHandle<Element> | null = null
       if (typeof selector === 'string') {
         if (selector.startsWith('//') || selector.startsWith('(//')) {
-          selector = `xpath/.${selector}`
           if (optionsResolved.waitForSelector !== undefined) {
-            await page.waitForSelector(selector, { timeout: optionsResolved.waitForSelector })
+            await page.waitForSelector(`xpath=${selector}`, { timeout: optionsResolved.waitForSelector })
           }
-          const [handle] = await page.$$(selector)
-          elem = handle.asElement() as ElementHandle<Element> | null
+          elem = await page.$(`xpath=${selector}`)
         } else {
           if (optionsResolved.waitForSelector !== undefined) {
             await page.waitForSelector(selector, { timeout: optionsResolved.waitForSelector })
@@ -827,7 +770,7 @@ export const createCursor = (
         }
       } else {
         // ElementHandle
-        elem = selector
+        elem = selector as ElementHandle<Element>
       }
       return elem
     }
@@ -837,7 +780,7 @@ export const createCursor = (
    * Make the cursor no longer visible.
    * Defined only if `visible=true` was passed.
    */
-  actions.removeMouseHelper = visible ? installMouseHelper(page).then(({ removeMouseHelper }) => removeMouseHelper) : undefined
+  actions.removeMouseHelper = visible ? installMouseHelper(page).then(result => result.removeMouseHelper) : undefined
 
   // Start random mouse movements. Do not await the promise but return immediately
   if (performRandomMoves) {

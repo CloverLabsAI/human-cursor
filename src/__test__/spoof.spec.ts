@@ -1,4 +1,4 @@
-import type { ElementHandle, Page } from 'puppeteer'
+import type { ElementHandle, Page } from 'playwright'
 import { type ClickOptions, createCursor, GhostCursor } from '../spoof'
 import { join } from 'path'
 import { readFileSync } from 'fs'
@@ -23,6 +23,18 @@ declare global {
   var boxWasClicked: boolean
 }
 
+async function isElementInViewport (page: Page, element: ElementHandle): Promise<boolean> {
+  const box = await element.boundingBox()
+  if (box == null) return false
+
+  const viewportSize = page.viewportSize()
+  if (viewportSize == null) return false
+
+  const { width, height } = viewportSize
+
+  return box.x < width && box.y < height && box.x + box.width > 0 && box.y + box.height > 0
+}
+
 describe('Mouse movements', () => {
   const html = readFileSync(join(__dirname, 'custom-page.html'), 'utf8')
 
@@ -32,7 +44,7 @@ describe('Mouse movements', () => {
 
   beforeEach(async () => {
     await page.goto('data:text/html,' + encodeURIComponent(html), {
-      waitUntil: 'networkidle2'
+      waitUntil: 'networkidle'
     })
 
     cursor = createCursor(page, undefined, undefined, {
@@ -48,9 +60,7 @@ describe('Mouse movements', () => {
     expect(await page.evaluate(() => window.boxWasClicked)).toEqual(true)
   }
 
-  const getScrollPosition = async (): Promise<{ top: number, left: number }> => await page.evaluate(() => (
-    { top: window.scrollY, left: window.scrollX }
-  ))
+  const getScrollPosition = async (): Promise<{ top: number, left: number }> => await page.evaluate(() => ({ top: window.scrollY, left: window.scrollX }))
 
   it('Should click on the element without throwing an error (CSS selector)', async () => {
     await testClick('#box1')
@@ -61,33 +71,35 @@ describe('Mouse movements', () => {
   })
 
   it('Should scroll to elements correctly', async () => {
-    const boxes = await Promise.all([1, 2, 3].map(async (number: number): Promise<ElementHandle<HTMLElement>> => {
-      const selector = `#box${number}`
-      const box = await page.waitForSelector(selector) as ElementHandle<HTMLElement> | null
-      if (box == null) throw new Error(`${selector} not found`)
-      return box
-    }))
+    const boxes = await Promise.all(
+      [1, 2, 3].map(async (number: number): Promise<ElementHandle<HTMLElement>> => {
+        const selector = `#box${number}`
+        const box = (await page.waitForSelector(selector)) as ElementHandle<HTMLElement> | null
+        if (box == null) throw new Error(`${selector} not found`)
+        return box
+      })
+    )
 
     expect(await getScrollPosition()).toEqual({ top: 0, left: 0 })
 
-    expect(await boxes[0].isIntersectingViewport()).toBeTruthy()
+    expect(await isElementInViewport(page, boxes[0])).toBeTruthy()
     await cursor.click(boxes[0])
     expect(await getScrollPosition()).toEqual({ top: 0, left: 0 })
-    expect(await boxes[0].isIntersectingViewport()).toBeTruthy()
+    expect(await isElementInViewport(page, boxes[0])).toBeTruthy()
 
-    expect(await boxes[1].isIntersectingViewport()).toBeFalsy()
+    expect(await isElementInViewport(page, boxes[1])).toBeFalsy()
     await cursor.move(boxes[1])
     expect(await getScrollPosition()).toEqual({ top: 2500, left: 0 })
-    expect(await boxes[1].isIntersectingViewport()).toBeTruthy()
+    expect(await isElementInViewport(page, boxes[1])).toBeTruthy()
 
-    expect(await boxes[2].isIntersectingViewport()).toBeFalsy()
+    expect(await isElementInViewport(page, boxes[2])).toBeFalsy()
     await cursor.move(boxes[2])
     expect(await getScrollPosition()).toEqual({ top: 4450, left: 2250 })
-    expect(await boxes[2].isIntersectingViewport()).toBeTruthy()
+    expect(await isElementInViewport(page, boxes[2])).toBeTruthy()
 
-    expect(await boxes[0].isIntersectingViewport()).toBeFalsy()
+    expect(await isElementInViewport(page, boxes[0])).toBeFalsy()
     await cursor.click(boxes[0])
-    expect(await boxes[0].isIntersectingViewport()).toBeTruthy()
+    expect(await isElementInViewport(page, boxes[0])).toBeTruthy()
   })
 
   it('Should scroll to position correctly', async () => {
