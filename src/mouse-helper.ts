@@ -6,8 +6,7 @@ import type { Page } from 'puppeteer'
  *
  * @returns `removeMouseHelper` function that removes the mouseHelper box and listeners.
  */
-export async function installMouseHelper (page: Page):
-Promise<{ removeMouseHelper: () => Promise<void> }> {
+export async function installMouseHelper (page: Page): Promise<{ removeMouseHelper: () => Promise<void> }> {
   let _removeMouseHelper: undefined | (() => void)
 
   const { identifier: evaluateOnNewDocumentId } = await page.evaluateOnNewDocument(() => {
