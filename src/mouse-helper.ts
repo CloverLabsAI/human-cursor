@@ -1,4 +1,4 @@
-import type { Page } from 'puppeteer'
+import type { Page } from 'playwright'
 
 /**
  * This injects a box into the page that moves with the mouse.
@@ -6,11 +6,10 @@ import type { Page } from 'puppeteer'
  *
  * @returns `removeMouseHelper` function that removes the mouseHelper box and listeners.
  */
-export async function installMouseHelper (page: Page):
-Promise<{ removeMouseHelper: () => Promise<void> }> {
+export async function installMouseHelper (page: Page): Promise<{ removeMouseHelper: () => Promise<void> }> {
   let _removeMouseHelper: undefined | (() => void)
 
-  const { identifier: evaluateOnNewDocumentId } = await page.evaluateOnNewDocument(() => {
+  const evaluateOnNewDocumentId = await page.addInitScript(() => {
     const attachListener = (): void => {
       const box = document.createElement('p-mouse-pointer')
       const styleElement = document.createElement('style')
@@ -124,7 +123,7 @@ Promise<{ removeMouseHelper: () => Promise<void> }> {
       })
     }
 
-    await page.removeScriptToEvaluateOnNewDocument(evaluateOnNewDocumentId)
+    // await page.initScript(evaluateOnNewDocumentId) TODO - find a way to remove this
   }
 
   /**
