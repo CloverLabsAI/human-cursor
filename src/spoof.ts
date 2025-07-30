@@ -211,7 +211,7 @@ const getRandomBoxPoint = ({ x, y, width, height }: BoundingBox, options?: Pick<
 
   return {
     x: x + paddingWidth / 2 + Math.random() * (width - paddingWidth),
-    y: y + paddingHeight / 2 + Math.random() * (height - paddingHeight)
+    y: y + paddingHeight / 2 + Math.random() * (height - paddingHeight),
   }
 }
 
@@ -228,7 +228,7 @@ export const getRandomPagePoint = async (page: Page): Promise<Vector> => {
     x: origin.x,
     y: origin.y,
     width: viewport.width,
-    height: viewport.height
+    height: viewport.height,
   })
 }
 
@@ -245,7 +245,7 @@ export const getElementBox = async (page: Page, element: ElementHandle, relative
 }
 
 /** Generates a set of points for mouse movement between two coordinates. */
-export function path (
+export function path(
   start: Vector,
   end: Vector | BoundingBox,
   /** Additional options for generating the path. Can also be a number which will set `spreadOverride`. */
@@ -269,7 +269,7 @@ export function path (
 const clampPositive = (vectors: Vector[], options?: PathOptions): Vector[] | TimedVector[] => {
   const clampedVectors = vectors.map(vector => ({
     x: Math.max(0, vector.x),
-    y: Math.max(0, vector.y)
+    y: Math.max(0, vector.y),
   }))
 
   return options?.useTimestamps === true ? generateTimestamps(clampedVectors, options) : clampedVectors
@@ -304,7 +304,7 @@ const generateTimestamps = (vectors: Vector[], options?: PathOptions): TimedVect
 
       timedVectors.push({
         ...vectors[i],
-        timestamp: timedVectors[i - 1].timestamp + time
+        timestamp: timedVectors[i - 1].timestamp + time,
       })
     }
   }
@@ -398,7 +398,7 @@ export const createCursor = (
       moveDelay: 2000,
       randomizeMoveDelay: true,
       ...defaultOptions?.randomMove,
-      ...options
+      ...options,
     } satisfies RandomMoveOptions
 
     try {
@@ -419,17 +419,17 @@ export const createCursor = (
 
   const actions: GhostCursor = {
     /** Toggles random mouse movements on or off. */
-    toggleRandomMove (random: boolean): void {
+    toggleRandomMove(random: boolean): void {
       moving = !random
     },
 
     /** Get current location of the cursor. */
-    getLocation (): Vector {
+    getLocation(): Vector {
       return previous
     },
 
     /** Simulates a mouse click at the specified selector or element. */
-    async click (selector?: string | ElementHandle, options?: ClickOptions): Promise<void> {
+    async click(selector?: string | ElementHandle, options?: ClickOptions): Promise<void> {
       const optionsResolved = {
         moveDelay: 2000,
         hesitate: 0,
@@ -438,7 +438,7 @@ export const createCursor = (
         button: 'left',
         clickCount: 1,
         ...defaultOptions?.click,
-        ...options
+        ...options,
       } satisfies ClickOptions
 
       const wasRandom = !moving
@@ -448,16 +448,18 @@ export const createCursor = (
         await actions.move(selector, {
           ...optionsResolved,
           // apply moveDelay after click, but not after actual move
-          moveDelay: 0
+          moveDelay: 0,
         })
       }
 
       try {
         await delay(optionsResolved.hesitate)
 
-        await page.mouse.down({ button: optionsResolved.button })
-        await delay(optionsResolved.waitForClick)
-        await page.mouse.up({ button: optionsResolved.button })
+        await page.mouse.click(previous.x, previous.y, {
+          button: optionsResolved.button,
+          clickCount: optionsResolved.clickCount,
+          delay: optionsResolved.waitForClick,
+        })
       } catch (error) {
         log('Warning: could not click mouse, error message:', error)
       }
@@ -468,14 +470,14 @@ export const createCursor = (
     },
 
     /** Moves the mouse to the specified selector or element. */
-    async move (selector: string | ElementHandle, options?: MoveOptions): Promise<void> {
+    async move(selector: string | ElementHandle, options?: MoveOptions): Promise<void> {
       const optionsResolved = {
         moveDelay: 0,
         maxTries: 10,
         overshootThreshold: 500,
         randomizeMoveDelay: true,
         ...defaultOptions?.move,
-        ...options
+        ...options,
       } satisfies MoveOptions
 
       const wasRandom = !moving
@@ -507,7 +509,7 @@ export const createCursor = (
             { ...dimensions, ...destination },
             {
               ...optionsResolved,
-              spreadOverride: OVERSHOOT_SPREAD
+              spreadOverride: OVERSHOOT_SPREAD,
             }
           )
 
@@ -535,12 +537,12 @@ export const createCursor = (
     },
 
     /** Moves the mouse to the specified destination point. */
-    async moveTo (destination: Vector, options?: MoveToOptions): Promise<void> {
+    async moveTo(destination: Vector, options?: MoveToOptions): Promise<void> {
       const optionsResolved = {
         moveDelay: 0,
         randomizeMoveDelay: true,
         ...defaultOptions?.moveTo,
-        ...options
+        ...options,
       } satisfies MoveToOptions
 
       const wasRandom = !moving
@@ -552,13 +554,13 @@ export const createCursor = (
     },
 
     /** Scrolls the element into view. If already in view, no scroll occurs. */
-    async scrollIntoView (selector: string | ElementHandle, options?: ScrollIntoViewOptions): Promise<void> {
+    async scrollIntoView(selector: string | ElementHandle, options?: ScrollIntoViewOptions): Promise<void> {
       const optionsResolved = {
         scrollDelay: 200,
         scrollSpeed: 100,
         inViewportMargin: 0,
         ...defaultOptions?.scroll,
-        ...options
+        ...options,
       } satisfies ScrollIntoViewOptions
 
       const scrollSpeed = clamp(optionsResolved.scrollSpeed, 1, 100)
@@ -571,7 +573,7 @@ export const createCursor = (
         docHeight: document.body.scrollHeight,
         docWidth: document.body.scrollWidth,
         scrollPositionTop: window.scrollY,
-        scrollPositionLeft: window.scrollX
+        scrollPositionLeft: window.scrollX,
       }))
 
       const elemBoundingBox = await getElementBox(page, elem) // is relative to viewport
@@ -579,7 +581,7 @@ export const createCursor = (
         top: elemBoundingBox.y,
         left: elemBoundingBox.x,
         bottom: elemBoundingBox.y + elemBoundingBox.height,
-        right: elemBoundingBox.x + elemBoundingBox.width
+        right: elemBoundingBox.x + elemBoundingBox.width,
       }
 
       // Add margin around the element
@@ -587,7 +589,7 @@ export const createCursor = (
         top: elemBox.top - optionsResolved.inViewportMargin,
         left: elemBox.left - optionsResolved.inViewportMargin,
         bottom: elemBox.bottom + optionsResolved.inViewportMargin,
-        right: elemBox.right + optionsResolved.inViewportMargin
+        right: elemBox.right + optionsResolved.inViewportMargin,
       }
 
       // Get position relative to the whole document
@@ -595,7 +597,7 @@ export const createCursor = (
         top: marginedBox.top + scrollPositionTop,
         left: marginedBox.left + scrollPositionLeft,
         bottom: marginedBox.bottom + scrollPositionTop,
-        right: marginedBox.right + scrollPositionLeft
+        right: marginedBox.right + scrollPositionLeft,
       }
 
       // Convert back to being relative to the viewport-- though if box with margin added goes outside
@@ -606,7 +608,7 @@ export const createCursor = (
         top: Math.max(marginedBoxRelativeToDoc.top, 0) - scrollPositionTop,
         left: Math.max(marginedBoxRelativeToDoc.left, 0) - scrollPositionLeft,
         bottom: Math.min(marginedBoxRelativeToDoc.bottom, docHeight) - scrollPositionTop,
-        right: Math.min(marginedBoxRelativeToDoc.right, docWidth) - scrollPositionLeft
+        right: Math.min(marginedBoxRelativeToDoc.right, docWidth) - scrollPositionLeft,
       }
 
       const { top, left, bottom, right } = targetBox
@@ -650,19 +652,19 @@ export const createCursor = (
         await elem.evaluate((e: Element) =>
           e.scrollIntoView({
             block: 'center',
-            behavior: scrollSpeed < 90 ? 'smooth' : undefined
+            behavior: scrollSpeed < 90 ? 'smooth' : undefined,
           })
         )
       }
     },
 
     /** Scrolls the page the distance set by `delta`. */
-    async scroll (delta: Partial<Vector>, options?: ScrollOptions) {
+    async scroll(delta: Partial<Vector>, options?: ScrollOptions) {
       const optionsResolved = {
         scrollDelay: 200,
         scrollSpeed: 100,
         ...defaultOptions?.scroll,
-        ...options
+        ...options,
       } satisfies ScrollOptions
 
       const scrollSpeed = clamp(optionsResolved.scrollSpeed, 1, 100)
@@ -706,19 +708,19 @@ export const createCursor = (
     },
 
     /** Scrolls to the specified destination point. */
-    async scrollTo (destination: ScrollToDestination, options?: ScrollOptions) {
+    async scrollTo(destination: ScrollToDestination, options?: ScrollOptions) {
       const optionsResolved = {
         scrollDelay: 200,
         scrollSpeed: 100,
         ...defaultOptions?.scroll,
-        ...options
+        ...options,
       } satisfies ScrollOptions
 
       const { docHeight, docWidth, scrollPositionTop, scrollPositionLeft } = await page.evaluate(() => ({
         docHeight: document.body.scrollHeight,
         docWidth: document.body.scrollWidth,
         scrollPositionTop: window.scrollY,
-        scrollPositionLeft: window.scrollX
+        scrollPositionLeft: window.scrollX,
       }))
 
       const to = ((): Partial<Vector> => {
@@ -739,17 +741,17 @@ export const createCursor = (
       await this.scroll(
         {
           y: to.y !== undefined ? to.y - scrollPositionTop : 0,
-          x: to.x !== undefined ? to.x - scrollPositionLeft : 0
+          x: to.x !== undefined ? to.x - scrollPositionLeft : 0,
         },
         optionsResolved
       )
     },
 
     /** Gets the element via a selector. Can use an XPath. */
-    async getElement (selector: string | ElementHandle, options?: GetElementOptions): Promise<ElementHandle<Element>> {
+    async getElement(selector: string | ElementHandle, options?: GetElementOptions): Promise<ElementHandle<Element>> {
       const optionsResolved = {
         ...defaultOptions?.getElement,
-        ...options
+        ...options,
       } satisfies GetElementOptions
 
       let elem: ElementHandle<Element> | null = null
@@ -773,7 +775,7 @@ export const createCursor = (
         elem = selector as ElementHandle<Element>
       }
       return elem
-    }
+    },
   }
 
   /**
