@@ -1,8 +1,8 @@
 {
-  "name": "ghost-cursor-playwright",
+  "name": "playwright-ghost-cursor",
   "version": "1.0.0",
-  "description": "Move your mouse like a human in puppeteer or generate realistic movements on any 2D plane",
-  "repository": "https://github.com/Xetera/ghost-cursor",
+  "description": "A maintained fork of ghost-cursor, converted to Playwright",
+  "repository": "https://github.com/RedditCo/playwright-ghost-cursor",
   "main": "lib/spoof.js",
   "types": "lib/spoof.d.ts",
   "scripts": {
@@ -15,9 +15,10 @@
   "keywords": [
     "bezier-curve",
     "mouse-movement",
-    "botting"
+    "botting",
+    "playwright"
   ],
-  "author": "Xetera",
+  "author": "RedRover",
   "license": "ISC",
   "files": [
     "lib/**/*"

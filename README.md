@@ -1,5 +1,9 @@
-# Ghost Cursor
 
+
+### ALL CREDIT GOES TO THE ORIGINAL GHOST-CRUSOR AUTHOR. This project is a direct fork and would not exist without Xterra.
+This repository is updated and maintained by the TryRedRover[dot]com team.
+
+# Playright Ghost Cursor
 <img src="https://media2.giphy.com/media/26ufp2LYURTvL5PRS/giphy.gif" width="100" align="right">
 
 Generate realistic, human-like mouse movement data between coordinates or navigate between elements with puppeteer
@@ -10,18 +14,18 @@ like the definitely-not-robot you are.
 ## Installation
 
 ```sh
-yarn add ghost-cursor
+yarn add playwright-ghost-cursor
 ```
 or with npm
 ```sh
-npm install ghost-cursor
+npm install playwright-ghost-cursor
 ```
 
 ## Usage
 Generating movement data between 2 coordinates.
 
 ```js
-import { path } from "ghost-cursor"
+import { path } from "playwright-ghost-cursor"
 
 const from = { x: 100, y: 100 }
 const to = { x: 600, y: 700 }
@@ -42,7 +46,7 @@ const route = path(from, to)
 
 Generating movement data between 2 coordinates with timestamps.
 ```js
-import { path } from "ghost-cursor"
+import { path } from "playwright-ghost-cursor"
 
 const from = { x: 100, y: 100 }
 const to = { x: 600, y: 700 }
@@ -62,23 +66,24 @@ const route = path(from, to, { useTimestamps: true })
 ```
 
 
-Usage with puppeteer:
+Usage with Playwright:
 
 ```js
-import { createCursor } from "ghost-cursor"
-import puppeteer from "puppeteer"
+import { createCursor } from "playwright-ghost-cursor"
+import { chromium, Browser, Page } from "playwright";
 
 const run = async (url) => {
   const selector = "#sign-up button"
-  const browser = await puppeteer.launch({ headless: false });
+  const browser = await chromium.launch({
+    headless: false, // Show browser window to see mouse movement
+    args: ["--enable-features=VizDisplayCompositor"], // Help with cursor visibility
+  });
   const page = await browser.newPage()
   const cursor = createCursor(page)
+
   await page.goto(url)
   await page.waitForSelector(selector)
   await cursor.click(selector)
-  // shorthand for
-  // await cursor.move(selector)
-  // await cursor.click()
 }
 ```
 
