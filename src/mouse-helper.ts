@@ -9,7 +9,7 @@ import type { Page } from 'playwright'
 export async function installMouseHelper (page: Page): Promise<{ removeMouseHelper: () => Promise<void> }> {
   let _removeMouseHelper: undefined | (() => void)
 
-  const evaluateOnNewDocumentId = await page.addInitScript(() => {
+  await page.addInitScript(() => {
     const attachListener = (): void => {
       const box = document.createElement('p-mouse-pointer')
       const styleElement = document.createElement('style')

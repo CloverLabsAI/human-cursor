@@ -1,9 +1,9 @@
 module.exports = {
   browsers: ['chromium'],
   launchOptions: {
-    headless: true,
+    headless: true
   },
   contextOptions: {
-    ignoreHTTPSErrors: true,
-  },
+    ignoreHTTPSErrors: true
+  }
 }

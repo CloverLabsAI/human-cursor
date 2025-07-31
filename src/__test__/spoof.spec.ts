@@ -15,7 +15,7 @@ const cursorDefaultOptions = {
   waitForClick: 0,
   scrollDelay: 0,
   scrollSpeed: 99,
-  inViewportMargin: 50,
+  inViewportMargin: 50
 } as const satisfies ClickOptions
 
 declare global {
@@ -23,7 +23,7 @@ declare global {
   var boxWasClicked: boolean
 }
 
-async function isElementInViewport(page: Page, element: ElementHandle): Promise<boolean> {
+async function isElementInViewport (page: Page, element: ElementHandle): Promise<boolean> {
   const box = await element.boundingBox()
   if (box == null) return false
 
@@ -44,13 +44,13 @@ describe('Mouse movements', () => {
 
   beforeEach(async () => {
     await page.goto('data:text/html,' + encodeURIComponent(html), {
-      waitUntil: 'networkidle',
+      waitUntil: 'networkidle'
     })
 
     cursor = createCursor(page, undefined, undefined, {
       move: cursorDefaultOptions,
       click: cursorDefaultOptions,
-      moveTo: cursorDefaultOptions,
+      moveTo: cursorDefaultOptions
     })
   })
 
@@ -60,7 +60,7 @@ describe('Mouse movements', () => {
     expect(await page.evaluate(() => window.boxWasClicked)).toEqual(true)
   }
 
-  const getScrollPosition = async (): Promise<{ top: number; left: number }> => await page.evaluate(() => ({ top: window.scrollY, left: window.scrollX }))
+  const getScrollPosition = async (): Promise<{ top: number, left: number }> => await page.evaluate(() => ({ top: window.scrollY, left: window.scrollX }))
 
   it('Should click on the element without throwing an error (CSS selector)', async () => {
     await testClick('#box1')
