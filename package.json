@@ -1,8 +1,8 @@
 {
   "name": "playwright-ghost-cursor",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "A maintained fork of ghost-cursor, converted to Playwright",
-  "repository": "https://github.com/RedditCo/playwright-ghost-cursor",
+  "repository": "https://github.com/TryRedRover/playwright-ghost-cursor",
   "main": "lib/spoof.js",
   "types": "lib/spoof.d.ts",
   "scripts": {
