@@ -1,104 +1,208 @@
+# Playwright Ghost Cursor
 
-
-### ALL CREDIT GOES TO THE ORIGINAL GHOST-CRUSOR AUTHOR. This project is a direct fork and would not exist without Xterra.
-This repository is updated and maintained by the TryRedRover[dot]com team.
-
-# Playright Ghost Cursor
 <img src="https://media2.giphy.com/media/26ufp2LYURTvL5PRS/giphy.gif" width="100" align="right">
 
-Generate realistic, human-like mouse movement data between coordinates or navigate between elements with Playwright
-like the definitely-not-robot you are.
+Generate realistic, human-like mouse movements in Playwright. This library creates natural cursor paths using Bezier curves with randomized parameters, making automated browser interactions indistinguishable from real users.
 
-> Oh yeah? Could a robot do _**this?**_
+> **Built on the original [ghost-cursor](https://github.com/Xetera/ghost-cursor) by Xetera**  
+> Ported to Playwright with enhanced features and active maintenance.
 
-## Installation
+## ✨ Features
 
-```sh
+- 🎯 **Human-like movements** - Bezier curves with natural imperfections
+- 🎲 **Randomized parameters** - Each movement is unique
+- 🎨 **Smart targeting** - Clicks random points within elements, not centers
+- 📊 **Easing functions** - Natural acceleration and deceleration
+- 🔄 **Momentum scrolling** - Realistic scroll behavior with overshoot
+- 🎮 **Zero teleporting** - Smooth, continuous paths with no jumps
+- ⚡ **Performance optimized** - Efficient point generation and interpolation
+
+## 📦 Installation
+
+```bash
+npm install playwright-ghost-cursor
+# or
 yarn add playwright-ghost-cursor
 ```
-or with npm
-```sh
-npm install playwright-ghost-cursor
+
+**Note:** Playwright is a peer dependency. Install it separately:
+```bash
+npm install -D playwright
 ```
 
-## Usage
-Generating movement data between 2 coordinates.
+## 🚀 Quick Start
 
-```js
-import { path } from "playwright-ghost-cursor"
+```typescript
+import { chromium } from 'playwright'
+import { createCursor } from 'playwright-ghost-cursor'
 
-const from = { x: 100, y: 100 }
-const to = { x: 600, y: 700 }
+const browser = await chromium.launch({ headless: false })
+const page = await browser.newPage()
+const cursor = createCursor(page)
 
-const route = path(from, to)
+await page.goto('https://example.com')
 
-/**
- * [
- *   { x: 100, y: 100 },
- *   { x: 108.75573501957051, y: 102.83608396351725 },
- *   { x: 117.54686481838543, y: 106.20019239793275 },
- *   { x: 126.3749821408895, y: 110.08364505509256 },
- *   { x: 135.24167973152743, y: 114.47776168684264 }
- *   ... and so on
- * ]
- */
+// Move to an element and click
+await cursor.click('#submit-button')
+
+// Move to coordinates
+await cursor.moveTo({ x: 100, y: 200 })
+
+// Type with human-like delays
+await cursor.click('input[name="email"]')
+await page.keyboard.type('user@example.com', { delay: 100 })
+
+// Scroll naturally
+await cursor.scroll({ y: 500 })
 ```
 
-Generating movement data between 2 coordinates with timestamps.
-```js
-import { path } from "playwright-ghost-cursor"
+## 📖 API Reference
 
-const from = { x: 100, y: 100 }
-const to = { x: 600, y: 700 }
+### `createCursor(page, start?, performRandomMoves?, defaultOptions?, visible?)`
 
-const route = path(from, to, { useTimestamps: true })
+Creates a cursor instance for the given page.
 
-/**
- * [
- *   { x: 100, y: 100, timestamp: 1711850430643 },
- *   { x: 114.78071695023473, y: 97.52340709495319, timestamp: 1711850430697 },
- *   { x: 129.1362373468682, y: 96.60141853603243, timestamp: 1711850430749 },
- *   { x: 143.09468422606352, y: 97.18676354029148, timestamp: 1711850430799 },
- *   { x: 156.68418062398405, y: 99.23217132478408, timestamp: 1711850430848 },
- *   ... and so on
- * ]
- */
+**Parameters:**
+- `page` - Playwright Page instance
+- `start` - Starting position (default: `{ x: 0, y: 0 }`)
+- `performRandomMoves` - Enable random movements (default: `false`)
+- `defaultOptions` - Default options for all movements
+- `visible` - Show cursor helper (default: `false`)
+
+**Returns:** `GhostCursor` instance
+
+### Cursor Methods
+
+#### `cursor.move(selector, options?)`
+Move to an element and hover over it.
+
+```typescript
+await cursor.move('#button', {
+  paddingPercentage: 0.1,  // Stay 10% away from edges
+  waitForSelector: 5000,    // Wait up to 5s for element
+  moveDelay: 1000          // Delay after movement
+})
 ```
 
+#### `cursor.moveTo(destination, options?)`
+Move to specific coordinates.
 
-Usage with Playwright:
-
-```js
-import { createCursor } from "playwright-ghost-cursor"
-import { chromium, Browser, Page } from "playwright";
-
-const run = async (url) => {
-  const selector = "#sign-up button"
-  const browser = await chromium.launch({
-    headless: false, // Show browser window to see mouse movement
-    args: ["--enable-features=VizDisplayCompositor"], // Help with cursor visibility
-  });
-  const page = await browser.newPage()
-  const cursor = createCursor(page)
-
-  await page.goto(url)
-  await page.waitForSelector(selector)
-  await cursor.click(selector)
-}
+```typescript
+await cursor.moveTo({ x: 500, y: 300 }, {
+  moveDelay: 500
+})
 ```
 
-### Puppeteer-specific behavior
-* `cursor.move()` will automatically overshoot or slightly miss and re-adjust for elements that are too far away
-from the cursor's starting point.
-* When moving over objects, a random coordinate that's within the element will be selected instead of
-hovering over the exact center of the element.
-* The speed of the mouse will take the distance and the size of the element you're clicking on into account.
+#### `cursor.click(selector?, options?)`
+Click an element or current position.
 
-<br>
+```typescript
+await cursor.click('#submit', {
+  hesitate: 200,        // Pause before clicking
+  waitForClick: 100,    // Hold click duration
+  moveDelay: 500,       // Delay after click
+  button: 'left'        // 'left', 'right', or 'middle'
+})
+```
 
-![ghost-cursor in action](https://cdn.discordapp.com/attachments/418699380833648644/664110683054538772/acc_gen.gif)
+#### `cursor.scroll(delta, options?)`
+Scroll with momentum.
 
-> Ghost cursor in action on a form
+```typescript
+await cursor.scroll({ y: 500 }, {
+  scrollSpeed: 50,      // 1-100, higher = faster
+  scrollDelay: 200      // Delay after scroll
+})
+```
 
-## Methods
-Please reference the original [Ghost Cursor](https://github.com/Xetera/ghost-cursor) library for up to date documentation.
+#### `cursor.scrollTo(target, options?)`
+Scroll to element or position.
+
+```typescript
+// Scroll to element
+await cursor.scrollTo('#footer')
+
+// Scroll to position
+await cursor.scrollTo('top')  // or 'bottom'
+```
+
+## 🎮 Advanced Usage
+
+### Custom Movement Options
+
+```typescript
+const cursor = createCursor(page, { x: 640, y: 360 }, false, {
+  move: {
+    paddingPercentage: 0.15,
+    waitForSelector: 10000,
+    moveDelay: 2000
+  },
+  click: {
+    hesitate: 300,
+    waitForClick: 150
+  },
+  scroll: {
+    scrollSpeed: 75,
+    scrollDelay: 300
+  }
+})
+```
+
+### Random Movements
+
+Enable random movements to simulate idle behavior:
+
+```typescript
+const cursor = createCursor(page, { x: 640, y: 360 }, true, {
+  randomMove: {
+    maxTries: 10,
+    moveDelay: 3000
+  }
+})
+
+// Random movements will occur automatically
+// They stop when you perform explicit actions
+```
+
+### Visible Cursor Helper
+
+For debugging, show a visual cursor:
+
+```typescript
+import { installMouseHelper } from 'playwright-ghost-cursor'
+
+await installMouseHelper(page)
+const cursor = createCursor(page)
+```
+
+## 🔬 How It Works
+
+1. **Bezier Curve Generation** - Creates smooth paths using randomized control points
+2. **Distortion** - Adds natural imperfections to the path
+3. **Easing Functions** - Applies acceleration/deceleration curves
+4. **Interpolation** - Samples points along the curve for smooth movement
+5. **Execution** - Moves the mouse through each point sequentially
+
+The library uses the [humancursor](https://github.com/Sudoeranas/humancursor) algorithm ported from Python, ensuring movements are statistically indistinguishable from real users.
+
+## 🎯 Examples
+
+Check out the `demo.ts` and `osu-test.ts` files for complete examples including:
+- Form filling
+- Button clicking
+- Scrolling
+- Fast-paced clicking games
+
+## 🤝 Contributing
+
+Contributions welcome! This library is actively maintained.
+
+## 📄 License
+
+ISC
+
+## 🙏 Credits
+
+- Original [ghost-cursor](https://github.com/Xetera/ghost-cursor) by Xetera
+- [humancursor](https://github.com/Sudoeranas/humancursor) algorithm by Sudoeranas
+- Maintained by the TryRedRover team

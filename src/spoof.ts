@@ -1,7 +1,9 @@
 import type { ElementHandle, Page, CDPSession } from 'playwright'
 import debug from 'debug'
-import { type Vector, type TimedVector, bezierCurve, bezierCurveSpeed, direction, magnitude, origin, overshoot, add, clamp, scale, extrapolate } from './math'
+import { type Vector, type TimedVector, origin, add, clamp, scale } from './math'
 import { installMouseHelper } from './mouse-helper'
+import { HumanizeMouseTrajectory } from './human-curve-generator'
+import { generateRandomCurveParameters } from './calculate-and-randomize'
 
 export { installMouseHelper }
 
@@ -188,19 +190,63 @@ const delay = async (ms: number): Promise<void> => {
 }
 
 /**
- * Calculate the amount of time needed to move from (x1, y1) to (x2, y2)
- * given the width of the element being clicked on
- * https://en.wikipedia.org/wiki/Fitts%27s_law
+ * Performs momentum-based wheel scrolling with easing for human-like behavior
  */
-const fitts = (distance: number, width: number): number => {
-  const a = 0
-  const b = 2
-  const id = Math.log2(distance / width + 1)
-  return a + b * id
+async function momentumWheelScroll(
+  page: Page,
+  x: number,
+  y: number,
+  duration: number = 600
+): Promise<void> {
+  const startTime = Date.now()
+  // Add slight randomness to interval for more human-like behavior (14-18ms instead of fixed 16ms)
+  const baseInterval = 16
+  let nextTickTime = startTime
+
+  return await new Promise<void>((resolve) => {
+    const scheduleNextTick = () => {
+      const elapsed = Date.now() - startTime
+      const t = Math.min(elapsed / duration, 1)
+
+      // Ease-out cubic → fast start, slow finish
+      const ease = 1 - Math.pow(1 - t, 3)
+
+      // Compute target scroll delta at this point in time
+      const targetX = x * ease
+      const targetY = y * ease
+
+      // Compute incremental delta since last tick
+      const prevT = Math.max(0, t - baseInterval / duration)
+      const prevEase = 1 - Math.pow(1 - prevT, 3)
+      const prevTargetX = x * prevEase
+      const prevTargetY = y * prevEase
+      const dx = targetX - prevTargetX
+      const dy = targetY - prevTargetY
+
+      page.mouse.wheel(dx, dy).catch(() => {}) // Fire and forget, don't block
+
+      if (t >= 1) {
+        resolve()
+      } else {
+        // Randomize next interval slightly (±2ms) for human-like variation
+        const randomizedInterval = baseInterval + (Math.random() * 4 - 2)
+        nextTickTime += randomizedInterval
+        const delay = Math.max(0, nextTickTime - Date.now())
+        setTimeout(scheduleNextTick, delay)
+      }
+    }
+    
+    scheduleNextTick()
+  })
 }
 
 /** Get a random point on a box */
 const getRandomBoxPoint = ({ x, y, width, height }: BoundingBox, options?: Pick<BoxOptions, 'paddingPercentage'>): Vector => {
+  // Python uses range(20, 80) which is 20-79, so 0.20 to 0.79
+  // This gives a 60% range centered in the element, avoiding edges
+  const xRandomOffset = (Math.floor(Math.random() * 60) + 20) / 100 // 0.20 to 0.79
+  const yRandomOffset = (Math.floor(Math.random() * 60) + 20) / 100 // 0.20 to 0.79
+
   let paddingWidth = 0
   let paddingHeight = 0
 
@@ -210,8 +256,8 @@ const getRandomBoxPoint = ({ x, y, width, height }: BoundingBox, options?: Pick<
   }
 
   return {
-    x: x + paddingWidth / 2 + Math.random() * (width - paddingWidth),
-    y: y + paddingHeight / 2 + Math.random() * (height - paddingHeight)
+    x: x + (width * xRandomOffset),
+    y: y + (height * yRandomOffset)
   }
 }
 
@@ -244,26 +290,65 @@ export const getElementBox = async (page: Page, element: ElementHandle, relative
   }
 }
 
-/** Generates a set of points for mouse movement between two coordinates. */
-export function path (
+/**
+ * Generates a set of points for mouse movement between two coordinates.
+ * @deprecated This function is deprecated. Path generation now happens internally using humancursor logic.
+ * For external use, consider using the cursor methods directly (move, moveTo, etc.)
+ */
+export function path(
   start: Vector,
   end: Vector | BoundingBox,
   /** Additional options for generating the path. Can also be a number which will set `spreadOverride`. */
   options?: number | PathOptions
 ): Vector[] | TimedVector[] {
+  // Simple fallback path generation for backward compatibility
+  // This is a basic linear interpolation since the old bezier logic has been removed
   const optionsResolved: PathOptions = typeof options === 'number' ? { spreadOverride: options } : { ...options }
+  const endPoint: Vector = 'width' in end ? { x: end.x, y: end.y } : end
 
-  const DEFAULT_WIDTH = 100
-  const MIN_STEPS = 25
-  const width = 'width' in end && end.width !== 0 ? end.width : DEFAULT_WIDTH
-  const curve = bezierCurve(start, end, optionsResolved.spreadOverride)
-  const length = curve.length() * 0.8
+  const steps = 50 // Default number of steps
+  const vectors: Vector[] = []
 
-  const speed = optionsResolved.moveSpeed !== undefined && optionsResolved.moveSpeed > 0 ? 25 / optionsResolved.moveSpeed : Math.random()
-  const baseTime = speed * MIN_STEPS
-  const steps = Math.ceil((Math.log2(fitts(length, width) + 1) + baseTime) * 3)
-  const re = curve.getLUT(steps)
-  return clampPositive(re, optionsResolved)
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps
+    vectors.push({
+      x: start.x + (endPoint.x - start.x) * t,
+      y: start.y + (endPoint.y - start.y) * t
+    })
+  }
+
+  return clampPositive(vectors, optionsResolved)
+}
+
+/** Generates a set of points for mouse movement using humancursor logic with random parameters. */
+async function pathWithHumanCurve(
+  page: Page,
+  start: Vector,
+  end: Vector | BoundingBox,
+  options?: number | PathOptions
+): Promise<Vector[] | TimedVector[]> {
+  const optionsResolved: PathOptions = typeof options === 'number' ? { spreadOverride: options } : { ...options }
+  const endPoint: Vector = 'width' in end ? { x: end.x, y: end.y } : end
+
+  // Generate random curve parameters
+  const params = await generateRandomCurveParameters(page, start, endPoint)
+
+  // Use spreadOverride if provided, otherwise use generated parameters
+  const offsetBoundaryX = optionsResolved.spreadOverride ?? params.offsetBoundaryX
+  const offsetBoundaryY = optionsResolved.spreadOverride ?? params.offsetBoundaryY
+
+  const humanCurve = new HumanizeMouseTrajectory(start, endPoint, {
+    offsetBoundaryX,
+    offsetBoundaryY,
+    knotsCount: params.knotsCount,
+    distortionMean: params.distortionMean,
+    distortionStDev: params.distortionStDev,
+    distortionFrequency: params.distortionFrequency,
+    tweening: params.tween,
+    targetPoints: params.targetPoints
+  })
+
+  return clampPositive(humanCurve.points, optionsResolved)
 }
 
 const clampPositive = (vectors: Vector[], options?: PathOptions): Vector[] | TimedVector[] => {
@@ -276,43 +361,31 @@ const clampPositive = (vectors: Vector[], options?: PathOptions): Vector[] | Tim
 }
 
 const generateTimestamps = (vectors: Vector[], options?: PathOptions): TimedVector[] => {
-  const speed = options?.moveSpeed ?? Math.random() * 0.5 + 0.5
-  const timeToMove = (P0: Vector, P1: Vector, P2: Vector, P3: Vector, samples: number): number => {
-    let total = 0
-    const dt = 1 / samples
-
-    for (let t = 0; t < 1; t += dt) {
-      const v1 = bezierCurveSpeed(t * dt, P0, P1, P2, P3)
-      const v2 = bezierCurveSpeed(t, P0, P1, P2, P3)
-      total += ((v1 + v2) * dt) / 2
-    }
-
-    return Math.round(total / speed)
-  }
-
+  const speed = options?.moveSpeed ?? 1.0
   const timedVectors: TimedVector[] = []
+  const startTime = Date.now()
 
   for (let i = 0; i < vectors.length; i++) {
     if (i === 0) {
-      timedVectors.push({ ...vectors[i], timestamp: Date.now() })
+      timedVectors.push({ ...vectors[i], timestamp: startTime })
     } else {
-      const P0 = vectors[i - 1]
-      const P1 = vectors[i]
-      const P2 = i + 1 < vectors.length ? vectors[i + 1] : extrapolate(P0, P1)
-      const P3 = i + 2 < vectors.length ? vectors[i + 2] : extrapolate(P1, P2)
-      const time = timeToMove(P0, P1, P2, P3, vectors.length)
+      // Calculate distance between points
+      const prev = vectors[i - 1]
+      const curr = vectors[i]
+      const distance = Math.sqrt(Math.pow(curr.x - prev.x, 2) + Math.pow(curr.y - prev.y, 2))
+
+      // Simple time calculation based on distance and speed
+      const timeIncrement = Math.round((distance / speed) * 2)
 
       timedVectors.push({
         ...vectors[i],
-        timestamp: timedVectors[i - 1].timestamp + time
+        timestamp: timedVectors[i - 1].timestamp + timeIncrement
       })
     }
   }
 
   return timedVectors
 }
-
-const shouldOvershoot = (a: Vector, b: Vector, threshold: number): boolean => magnitude(direction(a, b)) > threshold
 
 const intersectsElement = (vec: Vector, box: BoundingBox): boolean => {
   return vec.x > box.x && vec.x <= box.x + box.width && vec.y > box.y && vec.y <= box.y + box.height
@@ -365,29 +438,33 @@ export const createCursor = (
   } = {},
   visible: boolean = false
 ): GhostCursor => {
-  // this is kind of arbitrary, not a big fan but it seems to work
-  const OVERSHOOT_SPREAD = 10
-  const OVERSHOOT_RADIUS = 120
   let previous: Vector = start
 
   // Initial state: mouse is not moving
   let moving: boolean = false
 
+  // Initialize the actual mouse position to match the start position
+  // This MUST complete before any movements to prevent teleporting from (0,0)
+  // We make this synchronous by immediately moving the mouse
+  page.mouse.move(start.x, start.y).catch(() => {})
+
   /** Move the mouse over a number of vectors */
   const tracePath = async (vectors: Iterable<Vector | TimedVector>, abortOnMove: boolean = false): Promise<void> => {
-    for (const v of vectors) {
+    const vectorArray = Array.from(vectors)
+    if (vectorArray.length === 0) return
+
+    for (const v of vectorArray) {
       try {
-        // In case this is called from random mouse movements and the users wants to move the mouse, abort
         if (abortOnMove && moving) {
           return
         }
 
+        // Move directly to each point without interpolation
+        // Our curve already has enough points for smooth movement
         await page.mouse.move(v.x, v.y)
         previous = v
       } catch (error) {
-        // Exit function if the page is closed
         if (page.isClosed()) return
-
         log('Warning: could not move mouse, error message:', error)
       }
     }
@@ -404,13 +481,14 @@ export const createCursor = (
     try {
       if (!moving) {
         const rand = await getRandomPagePoint(page)
-        await tracePath(path(previous, rand, optionsResolved), true)
-        previous = rand
+        const pathPoints = await pathWithHumanCurve(page, previous, rand, optionsResolved)
+        await tracePath(pathPoints, true)
+        // Don't set previous = rand here! tracePath already updated previous to the actual last point
       }
       await delay(optionsResolved.moveDelay * (optionsResolved.randomizeMoveDelay ? Math.random() : 1))
       randomMove(options).then(
-        _ => {},
-        _ => {}
+        _ => { },
+        _ => { }
       ) // fire and forget, recursive function
     } catch (_) {
       log('Warning: stopping random mouse movements')
@@ -419,22 +497,22 @@ export const createCursor = (
 
   const actions: GhostCursor = {
     /** Toggles random mouse movements on or off. */
-    toggleRandomMove (random: boolean): void {
+    toggleRandomMove(random: boolean): void {
       moving = !random
     },
 
     /** Get current location of the cursor. */
-    getLocation (): Vector {
+    getLocation(): Vector {
       return previous
     },
 
     /** Simulates a mouse click at the specified selector or element. */
-    async click (selector?: string | ElementHandle, options?: ClickOptions): Promise<void> {
+    async click(selector?: string | ElementHandle, options?: ClickOptions): Promise<void> {
       const optionsResolved = {
-        moveDelay: 2000,
+        moveDelay: 50 + Math.random() * 100, // 50-150ms delay for human-like pacing
         hesitate: 0,
         waitForClick: 0,
-        randomizeMoveDelay: true,
+        randomizeMoveDelay: false, // Already randomized above
         button: 'left',
         clickCount: 1,
         ...defaultOptions?.click,
@@ -470,11 +548,10 @@ export const createCursor = (
     },
 
     /** Moves the mouse to the specified selector or element. */
-    async move (selector: string | ElementHandle, options?: MoveOptions): Promise<void> {
+    async move(selector: string | ElementHandle, options?: MoveOptions): Promise<void> {
       const optionsResolved = {
         moveDelay: 0,
         maxTries: 10,
-        overshootThreshold: 500,
         randomizeMoveDelay: true,
         ...defaultOptions?.move,
         ...options
@@ -491,32 +568,36 @@ export const createCursor = (
 
         const elem = await this.getElement(selector, optionsResolved)
 
-        // Make sure the object is in view
+        // Check if element is in viewport BEFORE scrolling
+        // This avoids unnecessary scroll operations
+        const box = await getElementBox(page, elem)
+        
+        // Only scroll if element is not fully visible in viewport
         await this.scrollIntoView(elem, optionsResolved)
 
-        const box = await getElementBox(page, elem)
-        const { height, width } = box
-        const destination = optionsResolved.destination !== undefined ? add(box, optionsResolved.destination) : getRandomBoxPoint(box, optionsResolved)
-        const dimensions = { height, width }
-        const overshooting = shouldOvershoot(previous, destination, optionsResolved.overshootThreshold)
-        const to = overshooting ? overshoot(destination, OVERSHOOT_RADIUS) : destination
+        // Get box again after potential scroll (position may have changed)
+        const boxAfterScroll = await getElementBox(page, elem)
+        
+        // Check if cursor is already within the element bounds
+        const alreadyInElement = intersectsElement(previous, boxAfterScroll)
+        
+        // If already in element and no specific destination, skip movement to avoid zigzag
+        // Otherwise, get destination point (random or specified)
+        const destination = optionsResolved.destination !== undefined 
+          ? add(boxAfterScroll, optionsResolved.destination) 
+          : (alreadyInElement ? previous : getRandomBoxPoint(boxAfterScroll, optionsResolved))
 
-        await tracePath(path(previous, to, optionsResolved))
-
-        if (overshooting) {
-          const correction = path(
-            to,
-            { ...dimensions, ...destination },
-            {
-              ...optionsResolved,
-              spreadOverride: OVERSHOOT_SPREAD
-            }
-          )
-
-          await tracePath(correction)
+        // Skip movement if already very close to destination (within 5px)
+        const distance = Math.sqrt(Math.pow(destination.x - previous.x, 2) + Math.pow(destination.y - previous.y, 2))
+        if (distance > 5) {
+          const pathPoints = await pathWithHumanCurve(page, previous, destination, optionsResolved)
+          await tracePath(pathPoints)
+        } else {
+          // Even if we skip movement, update previous to destination
+          // Otherwise next movement will start from wrong position
+          previous = destination
         }
-
-        previous = destination
+        // tracePath updates previous for each point, or we updated it above if skipped
 
         actions.toggleRandomMove(true)
 
@@ -525,7 +606,7 @@ export const createCursor = (
         // It's possible that the element that is being moved towards
         // has moved to a different location by the time
         // the the time the mouseover animation finishes
-        if (!intersectsElement(to, newBoundingBox)) {
+        if (!intersectsElement(destination, newBoundingBox)) {
           return await go(iteration + 1)
         }
       }
@@ -537,7 +618,7 @@ export const createCursor = (
     },
 
     /** Moves the mouse to the specified destination point. */
-    async moveTo (destination: Vector, options?: MoveToOptions): Promise<void> {
+    async moveTo(destination: Vector, options?: MoveToOptions): Promise<void> {
       const optionsResolved = {
         moveDelay: 0,
         randomizeMoveDelay: true,
@@ -547,14 +628,24 @@ export const createCursor = (
 
       const wasRandom = !moving
       actions.toggleRandomMove(false)
-      await tracePath(path(previous, destination, optionsResolved))
+      
+      // Skip movement if already very close to destination (within 5px)
+      const distance = Math.sqrt(Math.pow(destination.x - previous.x, 2) + Math.pow(destination.y - previous.y, 2))
+      if (distance > 5) {
+        const pathPoints = await pathWithHumanCurve(page, previous, destination, optionsResolved)
+        await tracePath(pathPoints)
+      } else {
+        // Even if we skip movement, update previous to destination
+        previous = destination
+      }
+      // tracePath updates previous for each point, or we updated it above if skipped
       actions.toggleRandomMove(wasRandom)
 
       await delay(optionsResolved.moveDelay * (optionsResolved.randomizeMoveDelay ? Math.random() : 1))
     },
 
     /** Scrolls the element into view. If already in view, no scroll occurs. */
-    async scrollIntoView (selector: string | ElementHandle, options?: ScrollIntoViewOptions): Promise<void> {
+    async scrollIntoView(selector: string | ElementHandle, options?: ScrollIntoViewOptions): Promise<void> {
       const optionsResolved = {
         scrollDelay: 200,
         scrollSpeed: 100,
@@ -633,33 +724,43 @@ export const createCursor = (
           deltaX = right - viewportWidth // Scroll right
         }
 
-        await this.scroll({ x: deltaX, y: deltaY }, optionsResolved)
+        // Add random padding for more human-like scrolling (humans don't scroll perfectly)
+        // Scale padding based on scroll distance to avoid over-scrolling
+        const scrollDistanceY = Math.abs(deltaY)
+        const scrollDistanceX = Math.abs(deltaX)
+        
+        // Use smaller padding for small scrolls, larger for big scrolls (max ±50px)
+        const paddingScaleY = Math.min(scrollDistanceY * 0.1, 50)
+        const paddingScaleX = Math.min(scrollDistanceX * 0.1, 50)
+        
+        const randomPaddingY = (Math.random() * 2 - 1) * paddingScaleY // -paddingScaleY to +paddingScaleY
+        const randomPaddingX = (Math.random() * 2 - 1) * paddingScaleX // -paddingScaleX to +paddingScaleX
+
+        await this.scroll({
+          x: deltaX + randomPaddingX,
+          y: deltaY + randomPaddingY
+        }, optionsResolved)
       }
 
       try {
-        if (scrollSpeed === 100 && optionsResolved.inViewportMargin <= 0) {
-          try {
-            await elem.scrollIntoViewIfNeeded()
-          } catch {
-            await manuallyScroll()
-          }
-        } else {
-          await manuallyScroll()
-        }
+        // Always use manual scroll for human-like momentum behavior
+        // Never use scrollIntoViewIfNeeded as it teleports instantly
+        await manuallyScroll()
       } catch (e) {
         // use regular JS scroll method as a fallback
         log('Falling back to JS scroll method', e)
-        await elem.evaluate((e: Element) =>
+        await elem.evaluate((e: Element) => {
           e.scrollIntoView({
             block: 'center',
-            behavior: scrollSpeed < 90 ? 'smooth' : undefined
+            // Always use smooth behavior to avoid instant teleport
+            behavior: 'smooth'
           })
-        )
+        })
       }
     },
 
     /** Scrolls the page the distance set by `delta`. */
-    async scroll (delta: Partial<Vector>, options?: ScrollOptions) {
+    async scroll(delta: Partial<Vector>, options?: ScrollOptions) {
       const optionsResolved = {
         scrollDelay: 200,
         scrollSpeed: 100,
@@ -668,47 +769,21 @@ export const createCursor = (
       } satisfies ScrollOptions
 
       const scrollSpeed = clamp(optionsResolved.scrollSpeed, 1, 100)
+      const deltaX = delta.x ?? 0
+      const deltaY = delta.y ?? 0
 
-      let deltaX = delta.x ?? 0
-      let deltaY = delta.y ?? 0
-      const xDirection = deltaX < 0 ? -1 : 1
-      const yDirection = deltaY < 0 ? -1 : 1
+      // Calculate duration based on scrollSpeed (inverse relationship)
+      // scrollSpeed 100 = 300ms, scrollSpeed 1 = 2000ms
+      const duration = scale(scrollSpeed, [1, 100], [2000, 300])
 
-      deltaX = Math.abs(deltaX)
-      deltaY = Math.abs(deltaY)
-
-      const largerDistanceDir = deltaX > deltaY ? 'x' : 'y'
-      const [largerDistance, shorterDistance] = largerDistanceDir === 'x' ? [deltaX, deltaY] : [deltaY, deltaX]
-
-      // When scrollSpeed under 90, pixels moved each scroll is equal to the scrollSpeed. 1 is as slow as we can get (without adding a delay), and 90 is pretty fast.
-      // Above 90 though, scale all the way to the full distance so that scrollSpeed=100 results in only 1 scroll action.
-      const EXP_SCALE_START = 90
-      const largerDistanceScrollStep = scrollSpeed < EXP_SCALE_START ? scrollSpeed : scale(scrollSpeed, [EXP_SCALE_START, 100], [EXP_SCALE_START, largerDistance])
-
-      const numSteps = Math.floor(largerDistance / largerDistanceScrollStep)
-      const largerDistanceRemainder = largerDistance % largerDistanceScrollStep
-      const shorterDistanceScrollStep = Math.floor(shorterDistance / numSteps)
-      const shorterDistanceRemainder = shorterDistance % numSteps
-
-      for (let i = 0; i < numSteps; i++) {
-        let longerDistanceDelta = largerDistanceScrollStep
-        let shorterDistanceDelta = shorterDistanceScrollStep
-        if (i === numSteps - 1) {
-          longerDistanceDelta += largerDistanceRemainder
-          shorterDistanceDelta += shorterDistanceRemainder
-        }
-        let [deltaX, deltaY] = largerDistanceDir === 'x' ? [longerDistanceDelta, shorterDistanceDelta] : [shorterDistanceDelta, longerDistanceDelta]
-        deltaX = deltaX * xDirection
-        deltaY = deltaY * yDirection
-
-        await page.mouse.wheel(deltaX, deltaY)
-      }
+      // Use momentum-based scrolling for human-like behavior
+      await momentumWheelScroll(page, deltaX, deltaY, duration)
 
       await delay(optionsResolved.scrollDelay)
     },
 
     /** Scrolls to the specified destination point. */
-    async scrollTo (destination: ScrollToDestination, options?: ScrollOptions) {
+    async scrollTo(destination: ScrollToDestination, options?: ScrollOptions) {
       const optionsResolved = {
         scrollDelay: 200,
         scrollSpeed: 100,
@@ -748,7 +823,7 @@ export const createCursor = (
     },
 
     /** Gets the element via a selector. Can use an XPath. */
-    async getElement (selector: string | ElementHandle, options?: GetElementOptions): Promise<ElementHandle<Element>> {
+    async getElement(selector: string | ElementHandle, options?: GetElementOptions): Promise<ElementHandle<Element>> {
       const optionsResolved = {
         ...defaultOptions?.getElement,
         ...options
@@ -787,8 +862,8 @@ export const createCursor = (
   // Start random mouse movements. Do not await the promise but return immediately
   if (performRandomMoves) {
     randomMove().then(
-      _ => {},
-      _ => {}
+      _ => { },
+      _ => { }
     )
   }
 
