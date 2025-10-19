@@ -247,14 +247,6 @@ const getRandomBoxPoint = ({ x, y, width, height }: BoundingBox, options?: Pick<
   const xRandomOffset = (Math.floor(Math.random() * 60) + 20) / 100 // 0.20 to 0.79
   const yRandomOffset = (Math.floor(Math.random() * 60) + 20) / 100 // 0.20 to 0.79
 
-  let _paddingWidth = 0
-  let _paddingHeight = 0
-
-  if (options?.paddingPercentage !== undefined && options?.paddingPercentage > 0 && options?.paddingPercentage <= 100) {
-    _paddingWidth = (width * options.paddingPercentage) / 100
-    _paddingHeight = (height * options.paddingPercentage) / 100
-  }
-
   return {
     x: x + (width * xRandomOffset),
     y: y + (height * yRandomOffset)
@@ -567,10 +559,6 @@ export const createCursor = (
         actions.toggleRandomMove(false)
 
         const elem = await this.getElement(selector, optionsResolved)
-
-        // Check if element is in viewport BEFORE scrolling
-        // This avoids unnecessary scroll operations
-        const _box = await getElementBox(page, elem)
         
         // Only scroll if element is not fully visible in viewport
         await this.scrollIntoView(elem, optionsResolved)
@@ -653,8 +641,6 @@ export const createCursor = (
         ...defaultOptions?.scroll,
         ...options
       } satisfies ScrollIntoViewOptions
-
-      const _scrollSpeed = clamp(optionsResolved.scrollSpeed, 1, 100)
 
       const elem = await this.getElement(selector, optionsResolved)
 
