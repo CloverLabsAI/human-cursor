@@ -323,7 +323,7 @@ async function pathWithHumanCurve(
   const endPoint: Vector = 'width' in end ? { x: end.x, y: end.y } : end
 
   // Generate random curve parameters
-  const params = await generateRandomCurveParameters(page, start, endPoint)
+  const params = await generateRandomCurveParameters(start, endPoint)
 
   // Use spreadOverride if provided, otherwise use generated parameters
   const offsetBoundaryX = optionsResolved.spreadOverride ?? params.offsetBoundaryX

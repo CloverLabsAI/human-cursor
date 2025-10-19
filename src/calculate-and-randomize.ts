@@ -1,4 +1,3 @@
-import type { Page } from 'playwright'
 import type { Vector } from './math'
 import { type TweeningFunction, TWEEN_OPTIONS } from './tweening'
 
@@ -45,18 +44,9 @@ function randomFromRange (min: number, max: number): number {
  * Ported from humancursor Python implementation
  */
 export async function generateRandomCurveParameters (
-  page: Page,
   preOrigin: Vector,
   postDestination: Vector
 ): Promise<RandomCurveParameters> {
-  const viewport = page.viewportSize()
-  if (viewport == null) {
-    throw new Error('Viewport size is null')
-  }
-
-  const viewportWidth = viewport.width
-  const viewportHeight = viewport.height
-
   // Random tween selection
   const tween = TWEEN_OPTIONS[Math.floor(Math.random() * TWEEN_OPTIONS.length)]
 
