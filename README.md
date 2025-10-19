@@ -1,4 +1,4 @@
-# Playwright Ghost Cursor
+# Human Cursor
 
 <img src="https://media2.giphy.com/media/26ufp2LYURTvL5PRS/giphy.gif" width="100" align="right">
 
@@ -20,9 +20,9 @@ Generate realistic, human-like mouse movements in Playwright. This library creat
 ## 📦 Installation
 
 ```bash
-npm install playwright-ghost-cursor
+npm install CloverLabsAI/human-cursor
 # or
-yarn add playwright-ghost-cursor
+yarn add CloverLabsAI/human-cursor
 ```
 
 **Note:** Playwright is a peer dependency. Install it separately:
@@ -34,7 +34,7 @@ npm install -D playwright
 
 ```typescript
 import { chromium } from 'playwright'
-import { createCursor } from 'playwright-ghost-cursor'
+import { createCursor } from 'human-cursor'
 
 const browser = await chromium.launch({ headless: false })
 const page = await browser.newPage()
@@ -169,7 +169,7 @@ const cursor = createCursor(page, { x: 640, y: 360 }, true, {
 For debugging, show a visual cursor:
 
 ```typescript
-import { installMouseHelper } from 'playwright-ghost-cursor'
+import { installMouseHelper } from 'human-cursor'
 
 await installMouseHelper(page)
 const cursor = createCursor(page)
@@ -204,5 +204,6 @@ ISC
 ## 🙏 Credits
 
 - Original [ghost-cursor](https://github.com/Xetera/ghost-cursor) by Xetera
+- [HumanCursor](https://github.com/riflosnake/HumanCursor) Python implementation by riflosnake
 - [humancursor](https://github.com/Sudoeranas/humancursor) algorithm by Sudoeranas
-- Maintained by the TryRedRover team
+- Maintained by CloverLabs AI

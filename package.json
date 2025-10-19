@@ -1,8 +1,8 @@
 {
-  "name": "playwright-ghost-cursor",
+  "name": "human-cursor",
   "version": "1.0.2",
-  "description": "A maintained fork of ghost-cursor, converted to Playwright",
-  "repository": "https://github.com/TryRedRover/playwright-ghost-cursor",
+  "description": "Generate realistic, human-like mouse movements in Playwright using Bezier curves with randomized parameters",
+  "repository": "https://github.com/CloverLabsAI/human-cursor",
   "main": "lib/spoof.js",
   "types": "lib/spoof.d.ts",
   "scripts": {
