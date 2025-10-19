@@ -503,7 +503,7 @@ export const createCursor = (
       const optionsResolved = {
         moveDelay: 50 + Math.random() * 100, // 50-150ms delay for human-like pacing
         hesitate: 0,
-        waitForClick: 0,
+        waitForClick: 40 + Math.random() * 20, // 40-60ms random delay between mousedown and mouseup
         randomizeMoveDelay: false, // Already randomized above
         button: 'left',
         clickCount: 1,
