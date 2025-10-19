@@ -1,0 +1,10 @@
+# Demo and test files not in tsconfig
+demo.ts
+osu-test.ts
+
+# Build output
+lib/
+dist/
+
+# Dependencies
+node_modules/

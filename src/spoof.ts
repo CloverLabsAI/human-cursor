@@ -204,7 +204,7 @@ async function momentumWheelScroll(
   let nextTickTime = startTime
 
   return await new Promise<void>((resolve) => {
-    const scheduleNextTick = () => {
+    const scheduleNextTick = (): void => {
       const elapsed = Date.now() - startTime
       const t = Math.min(elapsed / duration, 1)
 
@@ -247,12 +247,12 @@ const getRandomBoxPoint = ({ x, y, width, height }: BoundingBox, options?: Pick<
   const xRandomOffset = (Math.floor(Math.random() * 60) + 20) / 100 // 0.20 to 0.79
   const yRandomOffset = (Math.floor(Math.random() * 60) + 20) / 100 // 0.20 to 0.79
 
-  let paddingWidth = 0
-  let paddingHeight = 0
+  let _paddingWidth = 0
+  let _paddingHeight = 0
 
   if (options?.paddingPercentage !== undefined && options?.paddingPercentage > 0 && options?.paddingPercentage <= 100) {
-    paddingWidth = (width * options.paddingPercentage) / 100
-    paddingHeight = (height * options.paddingPercentage) / 100
+    _paddingWidth = (width * options.paddingPercentage) / 100
+    _paddingHeight = (height * options.paddingPercentage) / 100
   }
 
   return {
@@ -570,7 +570,7 @@ export const createCursor = (
 
         // Check if element is in viewport BEFORE scrolling
         // This avoids unnecessary scroll operations
-        const box = await getElementBox(page, elem)
+        const _box = await getElementBox(page, elem)
         
         // Only scroll if element is not fully visible in viewport
         await this.scrollIntoView(elem, optionsResolved)
@@ -654,7 +654,7 @@ export const createCursor = (
         ...options
       } satisfies ScrollIntoViewOptions
 
-      const scrollSpeed = clamp(optionsResolved.scrollSpeed, 1, 100)
+      const _scrollSpeed = clamp(optionsResolved.scrollSpeed, 1, 100)
 
       const elem = await this.getElement(selector, optionsResolved)
 

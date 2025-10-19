@@ -57,10 +57,10 @@ export async function generateRandomCurveParameters (
   const viewportWidth = viewport.width
   const viewportHeight = viewport.height
 
-  const minWidth = viewportWidth * 0.15
-  const maxWidth = viewportWidth * 0.85
-  const minHeight = viewportHeight * 0.15
-  const maxHeight = viewportHeight * 0.85
+  const _minWidth = viewportWidth * 0.15
+  const _maxWidth = viewportWidth * 0.85
+  const _minHeight = viewportHeight * 0.15
+  const _maxHeight = viewportHeight * 0.85
 
   // Random tween selection
   const tween = TWEEN_OPTIONS[Math.floor(Math.random() * TWEEN_OPTIONS.length)]

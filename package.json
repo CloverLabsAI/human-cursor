@@ -6,7 +6,7 @@
   "main": "lib/spoof.js",
   "types": "lib/spoof.d.ts",
   "scripts": {
-    "prepare": "husky && yarn lint && yarn build",
+    "prepare": "(husky || true) && yarn lint && yarn build",
     "build": "tsc -p tsconfig.build.json",
     "debug": "ts-node src/__debug__/browser-debug.ts",
     "lint": "yarn ts-standard --fix",
