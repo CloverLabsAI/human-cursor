@@ -9,6 +9,45 @@ export { installMouseHelper }
 
 const log = debug('ghost-cursor')
 
+/** Human-like click with debugging and native event dispatch */
+async function humanClick(page: Page, x: number, y: number): Promise<void> {
+  // Log all elements at that point (for debugging)
+  const elements = await page.evaluate(([x, y]) => {
+    return document.elementsFromPoint(x, y).map(e => ({
+      tag: e.tagName.toLowerCase(),
+      id: e.id,
+      classes: e.className,
+    }));
+  }, [x, y]);
+  console.log('Elements under cursor:', elements);
+
+  // Move & press
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+
+  // Tiny delay
+  await page.waitForTimeout(10 + Math.random() * 10);
+
+  // Trigger native click inside the browser context
+  await page.evaluate(([x, y]) => {
+    const el = document.elementFromPoint(x, y);
+    if (el) {
+      el.dispatchEvent(new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: x,
+        clientY: y,
+      }));
+    }
+  }, [x, y]);
+
+  await page.waitForTimeout(10 + Math.random() * 10);
+
+  // Release
+  await page.mouse.up();
+}
+
 // Playwright BoundingBox type
 export interface BoundingBox {
   x: number
@@ -525,11 +564,8 @@ export const createCursor = (
       try {
         await delay(optionsResolved.hesitate)
 
-        await page.mouse.click(previous.x, previous.y, {
-          button: optionsResolved.button,
-          clickCount: optionsResolved.clickCount,
-          delay: optionsResolved.waitForClick
-        })
+        // Use humanClick for more realistic clicking behavior
+        await humanClick(page, previous.x, previous.y)
       } catch (error) {
         log('Warning: could not click mouse, error message:', error)
       }
