@@ -83,9 +83,6 @@ async function humanCoordinateClick (page: Page, x: number, y: number): Promise<
     }
   }, [x, y])
 
-  console.log(`Found ${pathInfo.count} elements at (${x}, ${y}):`, JSON.stringify(pathInfo.allElements, null, 2))
-  console.log('Deepest element:', JSON.stringify(pathInfo.deepest, null, 2))
-
   // 2) Move mouse to coords first (so the browser sees pointer position)
   await page.mouse.move(x, y, { steps: 8 })
 
@@ -95,29 +92,37 @@ async function humanCoordinateClick (page: Page, x: number, y: number): Promise<
   // 4) delay between mousedown and mouseup: 45-70ms absolutely randomly
   await page.waitForTimeout(45 + Math.random() * 25)
 
-  // 5) Dispatch click on the deepest element found (inside page context)
-  //    We dispatch a MouseEvent with client coords to mimic real click.
+  // 5) Dispatch click on ALL elements found at coordinates (inside page context)
+  //    We dispatch a MouseEvent with client coords to mimic real click on every element.
   const clicked = await page.evaluate(([x, y]) => {
-    function findDeepElement (root: any): any {
+    const allTargets: any[] = []
+    const seen = new Set()
+
+    // Recursively collect all elements from a root (document or shadow root)
+    function collectAllElements (root: any): void {
       try {
-        const el = root.elementFromPoint(x, y)
-        if (el == null) return null
-        const shadow = el.shadowRoot
-        if (shadow != null) {
-          const deeper = findDeepElement(shadow)
-          if (deeper != null) return deeper
+        const elements = root.elementsFromPoint != null ? root.elementsFromPoint(x, y) : []
+
+        for (const el of elements) {
+          if (seen.has(el)) continue
+          seen.add(el)
+          allTargets.push(el)
+
+          // If this element has a shadow root, recurse into it
+          if (el.shadowRoot != null) {
+            collectAllElements(el.shadowRoot)
+          }
         }
-        return el
       } catch (e) {
-        return null
+        // Fail gracefully
       }
     }
 
-    const target = findDeepElement(document) ?? document.elementFromPoint(x, y)
-    if (target == null) return { ok: false, reason: 'no target' }
+    // Collect all elements
+    collectAllElements(document)
 
-    // Some UIs listen for composed events. We'll fire mousedown, click, mouseup in order,
-    // and also call target.click() as a fallback.
+    if (allTargets.length === 0) return { ok: false, reason: 'no targets found', clickedCount: 0 }
+
     const evOptions = {
       bubbles: true,
       cancelable: true,
@@ -128,17 +133,36 @@ async function humanCoordinateClick (page: Page, x: number, y: number): Promise<
       button: 0
     }
 
-    try {
-      target.dispatchEvent(new MouseEvent('mousedown', evOptions))
-      // small micro-wait is not possible synchronously; event loop will handle it.
-      target.dispatchEvent(new MouseEvent('click', evOptions))
-      target.dispatchEvent(new MouseEvent('mouseup', evOptions))
-      // fire the element's native click() as final attempt
-      if (typeof target.click === 'function') target.click()
-      return { ok: true, tag: target.tagName, id: (target.id != null && target.id !== '') ? target.id : null, classes: (target.className != null && target.className !== '') ? target.className : null }
-    } catch (err) {
-      return { ok: false, reason: String(err) }
+    const results: any[] = []
+    let successCount = 0
+
+    // Dispatch events to ALL elements
+    for (const target of allTargets) {
+      try {
+        target.dispatchEvent(new MouseEvent('mousedown', evOptions))
+        target.dispatchEvent(new MouseEvent('click', evOptions))
+        target.dispatchEvent(new MouseEvent('mouseup', evOptions))
+
+        // Also call native click() if available
+        if (typeof target.click === 'function') target.click()
+
+        results.push({
+          tag: target.tagName != null ? target.tagName.toLowerCase() : String(target),
+          id: (target.id != null && target.id !== '') ? target.id : null,
+          classes: (target.className != null && target.className !== '') ? target.className : null,
+          success: true
+        })
+        successCount++
+      } catch (err) {
+        results.push({
+          tag: target.tagName != null ? target.tagName.toLowerCase() : String(target),
+          error: String(err),
+          success: false
+        })
+      }
     }
+
+    return { ok: true, clickedCount: successCount, totalElements: allTargets.length, results }
   }, [x, y])
 
   // 6) small delay after click
