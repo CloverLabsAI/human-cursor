@@ -9,43 +9,129 @@ export { installMouseHelper }
 
 const log = debug('ghost-cursor')
 
-/** Human-like click with debugging and native event dispatch */
-async function humanClick(page: Page, x: number, y: number): Promise<void> {
-  // Log all elements at that point (for debugging)
-  const elements = await page.evaluate(([x, y]) => {
-    return document.elementsFromPoint(x, y).map(e => ({
-      tag: e.tagName.toLowerCase(),
-      id: e.id,
-      classes: e.className,
-    }));
-  }, [x, y]);
-  console.log('Elements under cursor:', elements);
+/**
+ * humanCoordinateClick - attempts to deeply resolve the element at viewport coords (x,y),
+ * recursing into open shadow roots, then performs:
+ *  page.mouse.move(x,y), page.mouse.down(), small delay, dispatch click on deepest element,
+ *  small delay, page.mouse.up()
+ *
+ * Returns info about the path of elements encountered.
+ */
+async function humanCoordinateClick(page: Page, x: number, y: number): Promise<{ pathInfo: any, clicked: any }> {
+  // 1) find deepest element path under (x,y) by recursing into shadow roots (open only)
+  const pathInfo = await page.evaluate(([x, y]) => {
+    function deepAt(root: any): any {
+      // root can be document or a ShadowRoot
+      try {
+        const el = root.elementFromPoint(x, y);
+        if (!el) return null;
 
-  // Move & press
-  await page.mouse.move(x, y);
+        // record a simple descriptor
+        const desc = {
+          tag: el.tagName ? el.tagName.toLowerCase() : String(el),
+          id: el.id || null,
+          classes: el.className || null,
+          node: null // placeholder for explanation
+        };
+
+        // if element hosts an open shadow root, attempt to go deeper
+        const shadow = el.shadowRoot;
+        if (shadow) {
+          const deeper = deepAt(shadow);
+          if (deeper) {
+            // include host info then deeper path
+            return { host: desc, deeper };
+          }
+        }
+
+        // no deeper shadow, return this element descriptor
+        return { host: desc };
+      } catch (e) {
+        // elementFromPoint can throw in weird contexts; fail gracefully
+        return null;
+      }
+    }
+
+    // start at document
+    const result = deepAt(document);
+    // also produce a readable flattened path for logging
+    function flatten(r: any): any[] {
+      const arr = [];
+      let cur = r;
+      while (cur) {
+        arr.push(cur.host);
+        cur = cur.deeper;
+      }
+      return arr;
+    }
+    return { raw: result, path: result ? flatten(result) : [] };
+  }, [x, y]);
+
+  console.log('Deep path at', x, y, JSON.stringify(pathInfo.path, null, 2));
+
+  // 2) Move mouse to coords first (so the browser sees pointer position)
+  await page.mouse.move(x, y, { steps: 8 });
+
+  // 3) mouse down (physical-like)
   await page.mouse.down();
 
-  // Tiny delay
-  await page.waitForTimeout(10 + Math.random() * 10);
+  // 4) delay between mousedown and mouseup: 45-70ms absolutely randomly
+  await page.waitForTimeout(45 + Math.random() * 25);
 
-  // Trigger native click inside the browser context
-  await page.evaluate(([x, y]) => {
-    const el = document.elementFromPoint(x, y);
-    if (el) {
-      el.dispatchEvent(new MouseEvent('click', {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-        clientX: x,
-        clientY: y,
-      }));
+  // 5) Dispatch click on the deepest element found (inside page context)
+  //    We dispatch a MouseEvent with client coords to mimic real click.
+  const clicked = await page.evaluate(([x, y]) => {
+    function findDeepElement(root: any): any {
+      try {
+        const el = root.elementFromPoint(x, y);
+        if (!el) return null;
+        const shadow = el.shadowRoot;
+        if (shadow) {
+          const deeper = findDeepElement(shadow);
+          if (deeper) return deeper;
+        }
+        return el;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    const target = findDeepElement(document) || document.elementFromPoint(x, y);
+    if (!target) return { ok: false, reason: 'no target' };
+
+    // Some UIs listen for composed events. We'll fire mousedown, click, mouseup in order,
+    // and also call target.click() as a fallback.
+    const evOptions = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      clientX: x,
+      clientY: y,
+      view: window,
+      button: 0
+    };
+
+    try {
+      target.dispatchEvent(new MouseEvent('mousedown', evOptions));
+      // small micro-wait is not possible synchronously; event loop will handle it.
+      target.dispatchEvent(new MouseEvent('click', evOptions));
+      target.dispatchEvent(new MouseEvent('mouseup', evOptions));
+      // fire the element's native click() as final attempt
+      if (typeof target.click === 'function') target.click();
+      return { ok: true, tag: target.tagName, id: target.id || null, classes: target.className || null };
+    } catch (err) {
+      return { ok: false, reason: String(err) };
     }
   }, [x, y]);
 
-  await page.waitForTimeout(10 + Math.random() * 10);
+  // 6) small delay after click
+  await page.waitForTimeout(10 + Math.random() * 20);
 
-  // Release
+  // 7) mouse up
   await page.mouse.up();
+
+  // return diagnostic info
+  return { pathInfo, clicked };
 }
 
 // Playwright BoundingBox type
@@ -564,8 +650,8 @@ export const createCursor = (
       try {
         await delay(optionsResolved.hesitate)
 
-        // Use humanClick for more realistic clicking behavior
-        await humanClick(page, previous.x, previous.y)
+        // Use humanCoordinateClick for more realistic clicking behavior with shadow DOM support
+        await humanCoordinateClick(page, previous.x, previous.y)
       } catch (error) {
         log('Warning: could not click mouse, error message:', error)
       }
