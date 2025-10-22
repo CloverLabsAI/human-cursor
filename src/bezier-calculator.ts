@@ -55,7 +55,7 @@ export function calculatePointsInCurve (n: number, points: Vector[]): Vector[] {
   if (n < 2) {
     throw new Error('n must be at least 2')
   }
-  
+
   const curvePoints: Vector[] = []
   const bernsteinPoly = bernsteinPolynomial(points)
 

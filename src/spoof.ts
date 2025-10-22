@@ -9,172 +9,6 @@ export { installMouseHelper }
 
 const log = debug('ghost-cursor')
 
-/**
- * humanCoordinateClick - attempts to deeply resolve the element at viewport coords (x,y),
- * recursing into open shadow roots, then performs:
- *  page.mouse.move(x,y), page.mouse.down(), small delay, dispatch click on deepest element,
- *  small delay, page.mouse.up()
- *
- * Returns info about the path of elements encountered.
- */
-async function humanCoordinateClick (page: Page, x: number, y: number): Promise<{ pathInfo: any, clicked: any }> {
-  // 1) Get ALL elements at (x,y) including those in shadow DOMs
-  const pathInfo = await page.evaluate(([x, y]) => {
-    const allElements: any[] = []
-    const seen = new Set()
-
-    // Helper to create element descriptor
-    function makeDesc (el: any): any {
-      return {
-        tag: (el.tagName != null) ? el.tagName.toLowerCase() : String(el),
-        id: (el.id != null && el.id !== '') ? el.id : null,
-        classes: (el.className != null && el.className !== '') ? el.className : null
-      }
-    }
-
-    // Recursively collect all elements from a root (document or shadow root)
-    function collectFromRoot (root: any): void {
-      try {
-        // Get all elements at this point in this root
-        const elements = root.elementsFromPoint != null ? root.elementsFromPoint(x, y) : []
-
-        for (const el of elements) {
-          // Avoid duplicates
-          if (seen.has(el)) continue
-          seen.add(el)
-
-          allElements.push(makeDesc(el))
-
-          // If this element has a shadow root, recurse into it
-          if (el.shadowRoot != null) {
-            collectFromRoot(el.shadowRoot)
-          }
-        }
-      } catch (e) {
-        // Fail gracefully if elementsFromPoint throws
-      }
-    }
-
-    // Start from document
-    collectFromRoot(document)
-
-    // Also find the deepest single element for backward compatibility
-    function findDeepest (root: any): any {
-      try {
-        const el = root.elementFromPoint(x, y)
-        if (el == null) return null
-        const shadow = el.shadowRoot
-        if (shadow != null) {
-          const deeper = findDeepest(shadow)
-          if (deeper != null) return deeper
-        }
-        return el
-      } catch (e) {
-        return null
-      }
-    }
-
-    const deepest = findDeepest(document)
-
-    return {
-      allElements,
-      deepest: deepest != null ? makeDesc(deepest) : null,
-      count: allElements.length
-    }
-  }, [x, y])
-
-  // 2) Move mouse to coords first (so the browser sees pointer position)
-  await page.mouse.move(x, y, { steps: 8 })
-
-  // 3) mouse down (physical-like)
-  await page.mouse.down()
-
-  // 4) delay between mousedown and mouseup: 45-70ms absolutely randomly
-  await page.waitForTimeout(45 + Math.random() * 25)
-
-  // 5) Dispatch click on ALL elements found at coordinates (inside page context)
-  //    We dispatch a MouseEvent with client coords to mimic real click on every element.
-  const clicked = await page.evaluate(([x, y]) => {
-    const allTargets: any[] = []
-    const seen = new Set()
-
-    // Recursively collect all elements from a root (document or shadow root)
-    function collectAllElements (root: any): void {
-      try {
-        const elements = root.elementsFromPoint != null ? root.elementsFromPoint(x, y) : []
-
-        for (const el of elements) {
-          if (seen.has(el)) continue
-          seen.add(el)
-          allTargets.push(el)
-
-          // If this element has a shadow root, recurse into it
-          if (el.shadowRoot != null) {
-            collectAllElements(el.shadowRoot)
-          }
-        }
-      } catch (e) {
-        // Fail gracefully
-      }
-    }
-
-    // Collect all elements
-    collectAllElements(document)
-
-    if (allTargets.length === 0) return { ok: false, reason: 'no targets found', clickedCount: 0 }
-
-    const evOptions = {
-      bubbles: true,
-      cancelable: true,
-      composed: true,
-      clientX: x,
-      clientY: y,
-      view: window,
-      button: 0
-    }
-
-    const results: any[] = []
-    let successCount = 0
-
-    // Dispatch events to ALL elements
-    for (const target of allTargets) {
-      try {
-        target.dispatchEvent(new MouseEvent('mousedown', evOptions))
-        target.dispatchEvent(new MouseEvent('click', evOptions))
-        target.dispatchEvent(new MouseEvent('mouseup', evOptions))
-
-        // Also call native click() if available
-        if (typeof target.click === 'function') target.click()
-
-        results.push({
-          tag: target.tagName != null ? target.tagName.toLowerCase() : String(target),
-          id: (target.id != null && target.id !== '') ? target.id : null,
-          classes: (target.className != null && target.className !== '') ? target.className : null,
-          success: true
-        })
-        successCount++
-      } catch (err) {
-        results.push({
-          tag: target.tagName != null ? target.tagName.toLowerCase() : String(target),
-          error: String(err),
-          success: false
-        })
-      }
-    }
-
-    return { ok: true, clickedCount: successCount, totalElements: allTargets.length, results }
-  }, [x, y])
-
-  // 6) small delay after click
-  await page.waitForTimeout(10 + Math.random() * 20)
-
-  // 7) mouse up
-  await page.mouse.up()
-
-  // return diagnostic info
-  return { pathInfo, clicked }
-}
-
 // Playwright BoundingBox type
 export interface BoundingBox {
   x: number
@@ -389,7 +223,7 @@ async function momentumWheelScroll (
       const dx = targetX - prevTargetX
       const dy = targetY - prevTargetY
 
-      page.mouse.wheel(dx, dy).catch(() => {}) // Fire and forget, don't block
+      page.mouse.wheel(dx, dy).catch(() => { }) // Fire and forget, don't block
 
       if (t >= 1) {
         resolve()
@@ -604,7 +438,7 @@ export const createCursor = (
   // Initialize the actual mouse position to match the start position
   // This MUST complete before any movements to prevent teleporting from (0,0)
   // We make this synchronous by immediately moving the mouse
-  page.mouse.move(start.x, start.y).catch(() => {})
+  page.mouse.move(start.x, start.y).catch(() => { })
 
   /** Move the mouse over a number of vectors */
   const tracePath = async (vectors: Iterable<Vector | TimedVector>, abortOnMove: boolean = false): Promise<void> => {
@@ -680,19 +514,31 @@ export const createCursor = (
       const wasRandom = !moving
       actions.toggleRandomMove(false)
 
+      let elementToClick: ElementHandle | undefined
+
       if (selector !== undefined) {
         await actions.move(selector, {
           ...optionsResolved,
           // apply moveDelay after click, but not after actual move
           moveDelay: 0
         })
+
+        // Get the ElementHandle whether it's a string or already an ElementHandle
+        elementToClick = typeof selector === 'string'
+          ? await actions.getElement(selector)
+          : selector
       }
 
       try {
         await delay(optionsResolved.hesitate)
 
-        // Use humanCoordinateClick for more realistic clicking behavior with shadow DOM support
-        await humanCoordinateClick(page, previous.x, previous.y)
+        if (elementToClick !== undefined) {
+          await elementToClick.click({
+            button: optionsResolved.button,
+            clickCount: optionsResolved.clickCount,
+            delay: optionsResolved.waitForClick
+          })
+        }
       } catch (error) {
         log('Warning: could not click mouse, error message:', error)
       }

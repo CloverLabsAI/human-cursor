@@ -127,10 +127,10 @@ export class HumanizeMouseTrajectory {
     }
 
     const distance = Math.sqrt(
-      Math.pow(this.toPoint.x - this.fromPoint.x, 2) + 
+      Math.pow(this.toPoint.x - this.fromPoint.x, 2) +
       Math.pow(this.toPoint.y - this.fromPoint.y, 2)
     )
-    
+
     // Generate enough points to ensure smooth curve
     // Use 1 point per pixel of distance, minimum 50 points
     // This balances smoothness with performance
@@ -199,7 +199,7 @@ export class HumanizeMouseTrajectory {
 
     // Use tweening to determine the distribution, then interpolate between actual points
     const res: Vector[] = []
-    
+
     for (let i = 0; i < targetPoints; i++) {
       // Explicitly preserve first and last points to avoid any floating point errors
       if (i === 0) {
@@ -210,25 +210,25 @@ export class HumanizeMouseTrajectory {
         res.push({ ...points[points.length - 1] })
         continue
       }
-      
+
       const t = i / (targetPoints - 1)
       const tweenedT = tween(t)
-      
+
       // Map tweened value to continuous index in points array
       const continuousIndex = tweenedT * (points.length - 1)
       const lowerIndex = Math.floor(continuousIndex)
       const upperIndex = Math.min(lowerIndex + 1, points.length - 1)
       const fraction = continuousIndex - lowerIndex
-      
+
       // Linearly interpolate between the two nearest points
       const lowerPoint = points[lowerIndex]
       const upperPoint = points[upperIndex]
-      
+
       const interpolated: Vector = {
         x: lowerPoint.x + (upperPoint.x - lowerPoint.x) * fraction,
         y: lowerPoint.y + (upperPoint.y - lowerPoint.y) * fraction
       }
-      
+
       res.push(interpolated)
     }
 

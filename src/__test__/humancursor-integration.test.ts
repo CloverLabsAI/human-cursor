@@ -12,7 +12,7 @@ describe('HumanCursor Integration Tests', () => {
         { x: 100, y: 0 }
       ]
       const result = calculatePointsInCurve(10, points)
-      
+
       expect(result).toHaveLength(10)
       expect(result[0]).toEqual({ x: 0, y: 0 })
       expect(result[result.length - 1]).toEqual({ x: 100, y: 0 })
@@ -36,9 +36,9 @@ describe('HumanCursor Integration Tests', () => {
     it('should generate a curve with default options', () => {
       const from = { x: 0, y: 0 }
       const to = { x: 100, y: 100 }
-      
+
       const trajectory = new HumanizeMouseTrajectory(from, to)
-      
+
       expect(trajectory.points).toBeDefined()
       expect(trajectory.points.length).toBeGreaterThan(0)
       expect(trajectory.fromPoint).toEqual(from)
@@ -48,14 +48,14 @@ describe('HumanCursor Integration Tests', () => {
     it('should generate a curve with custom options', () => {
       const from = { x: 0, y: 0 }
       const to = { x: 200, y: 200 }
-      
+
       const trajectory = new HumanizeMouseTrajectory(from, to, {
         offsetBoundaryX: 50,
         offsetBoundaryY: 50,
         knotsCount: 3,
         targetPoints: 50
       })
-      
+
       expect(trajectory.points).toBeDefined()
       expect(trajectory.points.length).toBe(50)
     })
@@ -63,7 +63,7 @@ describe('HumanCursor Integration Tests', () => {
     it('should generate steady movements', () => {
       const from = { x: 0, y: 0 }
       const to = { x: 100, y: 100 }
-      
+
       const trajectory = new HumanizeMouseTrajectory(from, to, {
         offsetBoundaryX: 10,
         offsetBoundaryY: 10,
@@ -71,7 +71,7 @@ describe('HumanCursor Integration Tests', () => {
         distortionStDev: 1.2,
         distortionFrequency: 1
       })
-      
+
       expect(trajectory.points).toBeDefined()
       expect(trajectory.points.length).toBeGreaterThan(0)
     })
@@ -79,9 +79,9 @@ describe('HumanCursor Integration Tests', () => {
     it('should handle short distances', () => {
       const from = { x: 0, y: 0 }
       const to = { x: 10, y: 10 }
-      
+
       const trajectory = new HumanizeMouseTrajectory(from, to)
-      
+
       expect(trajectory.points).toBeDefined()
       expect(trajectory.points.length).toBeGreaterThan(0)
     })
@@ -89,9 +89,9 @@ describe('HumanCursor Integration Tests', () => {
     it('should handle long distances', () => {
       const from = { x: 0, y: 0 }
       const to = { x: 1000, y: 1000 }
-      
+
       const trajectory = new HumanizeMouseTrajectory(from, to)
-      
+
       expect(trajectory.points).toBeDefined()
       expect(trajectory.points.length).toBeGreaterThan(0)
     })

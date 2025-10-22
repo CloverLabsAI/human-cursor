@@ -84,27 +84,27 @@ export async function generateRandomCurveParameters (
 
   // Target points with weighted random selection - EXACTLY matches Python for web
   const targetPointsRanges = [
-    { min: 35, max: 44 },  // range(35, 45)
-    { min: 45, max: 59 },  // range(45, 60)
-    { min: 60, max: 79 }   // range(60, 80)
+    { min: 35, max: 44 }, // range(35, 45)
+    { min: 45, max: 59 }, // range(45, 60)
+    { min: 60, max: 79 } // range(60, 80)
   ]
   const targetPointsWeights = [0.53, 0.32, 0.15]
   const selectedPointsRange = weightedRandomChoice(targetPointsRanges, targetPointsWeights)
-  let targetPoints = randomFromRange(selectedPointsRange.min, selectedPointsRange.max)
+  const targetPoints = randomFromRange(selectedPointsRange.min, selectedPointsRange.max)
 
   // Calculate movement distance for relative boundaries
   const distance = Math.sqrt(
     Math.pow(postDestination.x - preOrigin.x, 2) +
     Math.pow(postDestination.y - preOrigin.y, 2)
   )
-  
+
   // Always use natural curves - don't reduce boundaries based on position
   // The original logic created straight lines for edge movements
   // Instead, ensure minimum curve variation regardless of position
   const minBoundary = Math.max(30, distance * 0.15)
   offsetBoundaryX = Math.max(offsetBoundaryX, minBoundary)
   offsetBoundaryY = Math.max(offsetBoundaryY, minBoundary)
-  
+
   // Ensure minimum knots for natural curves
   knotsCount = Math.max(knotsCount, 2)
 
