@@ -18,56 +18,73 @@ const log = debug('ghost-cursor')
  * Returns info about the path of elements encountered.
  */
 async function humanCoordinateClick (page: Page, x: number, y: number): Promise<{ pathInfo: any, clicked: any }> {
-  // 1) find deepest element path under (x,y) by recursing into shadow roots (open only)
+  // 1) Get ALL elements at (x,y) including those in shadow DOMs
   const pathInfo = await page.evaluate(([x, y]) => {
-    function deepAt (root: any): any {
-      // root can be document or a ShadowRoot
+    const allElements: any[] = []
+    const seen = new Set()
+
+    // Helper to create element descriptor
+    function makeDesc (el: any): any {
+      return {
+        tag: (el.tagName != null) ? el.tagName.toLowerCase() : String(el),
+        id: (el.id != null && el.id !== '') ? el.id : null,
+        classes: (el.className != null && el.className !== '') ? el.className : null
+      }
+    }
+
+    // Recursively collect all elements from a root (document or shadow root)
+    function collectFromRoot (root: any): void {
+      try {
+        // Get all elements at this point in this root
+        const elements = root.elementsFromPoint != null ? root.elementsFromPoint(x, y) : []
+
+        for (const el of elements) {
+          // Avoid duplicates
+          if (seen.has(el)) continue
+          seen.add(el)
+
+          allElements.push(makeDesc(el))
+
+          // If this element has a shadow root, recurse into it
+          if (el.shadowRoot != null) {
+            collectFromRoot(el.shadowRoot)
+          }
+        }
+      } catch (e) {
+        // Fail gracefully if elementsFromPoint throws
+      }
+    }
+
+    // Start from document
+    collectFromRoot(document)
+
+    // Also find the deepest single element for backward compatibility
+    function findDeepest (root: any): any {
       try {
         const el = root.elementFromPoint(x, y)
         if (el == null) return null
-
-        // record a simple descriptor
-        const desc = {
-          tag: (el.tagName != null) ? el.tagName.toLowerCase() : String(el),
-          id: (el.id != null && el.id !== '') ? el.id : null,
-          classes: (el.className != null && el.className !== '') ? el.className : null,
-          node: null // placeholder for explanation
-        }
-
-        // if element hosts an open shadow root, attempt to go deeper
         const shadow = el.shadowRoot
         if (shadow != null) {
-          const deeper = deepAt(shadow)
-          if (deeper != null) {
-            // include host info then deeper path
-            return { host: desc, deeper }
-          }
+          const deeper = findDeepest(shadow)
+          if (deeper != null) return deeper
         }
-
-        // no deeper shadow, return this element descriptor
-        return { host: desc }
+        return el
       } catch (e) {
-        // elementFromPoint can throw in weird contexts; fail gracefully
         return null
       }
     }
 
-    // start at document
-    const result = deepAt(document)
-    // also produce a readable flattened path for logging
-    function flatten (r: any): any[] {
-      const arr = []
-      let cur = r
-      while (cur != null) {
-        arr.push(cur.host)
-        cur = cur.deeper
-      }
-      return arr
+    const deepest = findDeepest(document)
+
+    return {
+      allElements,
+      deepest: deepest != null ? makeDesc(deepest) : null,
+      count: allElements.length
     }
-    return { raw: result, path: (result != null) ? flatten(result) : [] }
   }, [x, y])
 
-  console.log('Deep path at', x, y, JSON.stringify(pathInfo.path, null, 2))
+  console.log(`Found ${pathInfo.count} elements at (${x}, ${y}):`, JSON.stringify(pathInfo.allElements, null, 2))
+  console.log('Deepest element:', JSON.stringify(pathInfo.deepest, null, 2))
 
   // 2) Move mouse to coords first (so the browser sees pointer position)
   await page.mouse.move(x, y, { steps: 8 })
