@@ -17,87 +17,87 @@ const log = debug('ghost-cursor')
  *
  * Returns info about the path of elements encountered.
  */
-async function humanCoordinateClick(page: Page, x: number, y: number): Promise<{ pathInfo: any, clicked: any }> {
+async function humanCoordinateClick (page: Page, x: number, y: number): Promise<{ pathInfo: any, clicked: any }> {
   // 1) find deepest element path under (x,y) by recursing into shadow roots (open only)
   const pathInfo = await page.evaluate(([x, y]) => {
-    function deepAt(root: any): any {
+    function deepAt (root: any): any {
       // root can be document or a ShadowRoot
       try {
-        const el = root.elementFromPoint(x, y);
-        if (!el) return null;
+        const el = root.elementFromPoint(x, y)
+        if (el == null) return null
 
         // record a simple descriptor
         const desc = {
-          tag: el.tagName ? el.tagName.toLowerCase() : String(el),
-          id: el.id || null,
-          classes: el.className || null,
+          tag: (el.tagName != null) ? el.tagName.toLowerCase() : String(el),
+          id: (el.id != null && el.id !== '') ? el.id : null,
+          classes: (el.className != null && el.className !== '') ? el.className : null,
           node: null // placeholder for explanation
-        };
+        }
 
         // if element hosts an open shadow root, attempt to go deeper
-        const shadow = el.shadowRoot;
-        if (shadow) {
-          const deeper = deepAt(shadow);
-          if (deeper) {
+        const shadow = el.shadowRoot
+        if (shadow != null) {
+          const deeper = deepAt(shadow)
+          if (deeper != null) {
             // include host info then deeper path
-            return { host: desc, deeper };
+            return { host: desc, deeper }
           }
         }
 
         // no deeper shadow, return this element descriptor
-        return { host: desc };
+        return { host: desc }
       } catch (e) {
         // elementFromPoint can throw in weird contexts; fail gracefully
-        return null;
+        return null
       }
     }
 
     // start at document
-    const result = deepAt(document);
+    const result = deepAt(document)
     // also produce a readable flattened path for logging
-    function flatten(r: any): any[] {
-      const arr = [];
-      let cur = r;
-      while (cur) {
-        arr.push(cur.host);
-        cur = cur.deeper;
+    function flatten (r: any): any[] {
+      const arr = []
+      let cur = r
+      while (cur != null) {
+        arr.push(cur.host)
+        cur = cur.deeper
       }
-      return arr;
+      return arr
     }
-    return { raw: result, path: result ? flatten(result) : [] };
-  }, [x, y]);
+    return { raw: result, path: (result != null) ? flatten(result) : [] }
+  }, [x, y])
 
-  console.log('Deep path at', x, y, JSON.stringify(pathInfo.path, null, 2));
+  console.log('Deep path at', x, y, JSON.stringify(pathInfo.path, null, 2))
 
   // 2) Move mouse to coords first (so the browser sees pointer position)
-  await page.mouse.move(x, y, { steps: 8 });
+  await page.mouse.move(x, y, { steps: 8 })
 
   // 3) mouse down (physical-like)
-  await page.mouse.down();
+  await page.mouse.down()
 
   // 4) delay between mousedown and mouseup: 45-70ms absolutely randomly
-  await page.waitForTimeout(45 + Math.random() * 25);
+  await page.waitForTimeout(45 + Math.random() * 25)
 
   // 5) Dispatch click on the deepest element found (inside page context)
   //    We dispatch a MouseEvent with client coords to mimic real click.
   const clicked = await page.evaluate(([x, y]) => {
-    function findDeepElement(root: any): any {
+    function findDeepElement (root: any): any {
       try {
-        const el = root.elementFromPoint(x, y);
-        if (!el) return null;
-        const shadow = el.shadowRoot;
-        if (shadow) {
-          const deeper = findDeepElement(shadow);
-          if (deeper) return deeper;
+        const el = root.elementFromPoint(x, y)
+        if (el == null) return null
+        const shadow = el.shadowRoot
+        if (shadow != null) {
+          const deeper = findDeepElement(shadow)
+          if (deeper != null) return deeper
         }
-        return el;
+        return el
       } catch (e) {
-        return null;
+        return null
       }
     }
 
-    const target = findDeepElement(document) || document.elementFromPoint(x, y);
-    if (!target) return { ok: false, reason: 'no target' };
+    const target = findDeepElement(document) ?? document.elementFromPoint(x, y)
+    if (target == null) return { ok: false, reason: 'no target' }
 
     // Some UIs listen for composed events. We'll fire mousedown, click, mouseup in order,
     // and also call target.click() as a fallback.
@@ -109,29 +109,29 @@ async function humanCoordinateClick(page: Page, x: number, y: number): Promise<{
       clientY: y,
       view: window,
       button: 0
-    };
+    }
 
     try {
-      target.dispatchEvent(new MouseEvent('mousedown', evOptions));
+      target.dispatchEvent(new MouseEvent('mousedown', evOptions))
       // small micro-wait is not possible synchronously; event loop will handle it.
-      target.dispatchEvent(new MouseEvent('click', evOptions));
-      target.dispatchEvent(new MouseEvent('mouseup', evOptions));
+      target.dispatchEvent(new MouseEvent('click', evOptions))
+      target.dispatchEvent(new MouseEvent('mouseup', evOptions))
       // fire the element's native click() as final attempt
-      if (typeof target.click === 'function') target.click();
-      return { ok: true, tag: target.tagName, id: target.id || null, classes: target.className || null };
+      if (typeof target.click === 'function') target.click()
+      return { ok: true, tag: target.tagName, id: (target.id != null && target.id !== '') ? target.id : null, classes: (target.className != null && target.className !== '') ? target.className : null }
     } catch (err) {
-      return { ok: false, reason: String(err) };
+      return { ok: false, reason: String(err) }
     }
-  }, [x, y]);
+  }, [x, y])
 
   // 6) small delay after click
-  await page.waitForTimeout(10 + Math.random() * 20);
+  await page.waitForTimeout(10 + Math.random() * 20)
 
   // 7) mouse up
-  await page.mouse.up();
+  await page.mouse.up()
 
   // return diagnostic info
-  return { pathInfo, clicked };
+  return { pathInfo, clicked }
 }
 
 // Playwright BoundingBox type
@@ -317,7 +317,7 @@ const delay = async (ms: number): Promise<void> => {
 /**
  * Performs momentum-based wheel scrolling with easing for human-like behavior
  */
-async function momentumWheelScroll(
+async function momentumWheelScroll (
   page: Page,
   x: number,
   y: number,
@@ -360,7 +360,7 @@ async function momentumWheelScroll(
         setTimeout(scheduleNextTick, delay)
       }
     }
-    
+
     scheduleNextTick()
   })
 }
@@ -412,7 +412,7 @@ export const getElementBox = async (page: Page, element: ElementHandle, relative
  * @deprecated This function is deprecated. Path generation now happens internally using humancursor logic.
  * For external use, consider using the cursor methods directly (move, moveTo, etc.)
  */
-export function path(
+export function path (
   start: Vector,
   end: Vector | BoundingBox,
   /** Additional options for generating the path. Can also be a number which will set `spreadOverride`. */
@@ -438,7 +438,7 @@ export function path(
 }
 
 /** Generates a set of points for mouse movement using humancursor logic with random parameters. */
-async function pathWithHumanCurve(
+async function pathWithHumanCurve (
   page: Page,
   start: Vector,
   end: Vector | BoundingBox,
@@ -614,17 +614,17 @@ export const createCursor = (
 
   const actions: GhostCursor = {
     /** Toggles random mouse movements on or off. */
-    toggleRandomMove(random: boolean): void {
+    toggleRandomMove (random: boolean): void {
       moving = !random
     },
 
     /** Get current location of the cursor. */
-    getLocation(): Vector {
+    getLocation (): Vector {
       return previous
     },
 
     /** Simulates a mouse click at the specified selector or element. */
-    async click(selector?: string | ElementHandle, options?: ClickOptions): Promise<void> {
+    async click (selector?: string | ElementHandle, options?: ClickOptions): Promise<void> {
       const optionsResolved = {
         moveDelay: 50 + Math.random() * 100, // 50-150ms delay for human-like pacing
         hesitate: 0,
@@ -662,7 +662,7 @@ export const createCursor = (
     },
 
     /** Moves the mouse to the specified selector or element. */
-    async move(selector: string | ElementHandle, options?: MoveOptions): Promise<void> {
+    async move (selector: string | ElementHandle, options?: MoveOptions): Promise<void> {
       const optionsResolved = {
         moveDelay: 0,
         maxTries: 10,
@@ -681,20 +681,20 @@ export const createCursor = (
         actions.toggleRandomMove(false)
 
         const elem = await this.getElement(selector, optionsResolved)
-        
+
         // Only scroll if element is not fully visible in viewport
         await this.scrollIntoView(elem, optionsResolved)
 
         // Get box again after potential scroll (position may have changed)
         const boxAfterScroll = await getElementBox(page, elem)
-        
+
         // Check if cursor is already within the element bounds
         const alreadyInElement = intersectsElement(previous, boxAfterScroll)
-        
+
         // If already in element and no specific destination, skip movement to avoid zigzag
         // Otherwise, get destination point (random or specified)
-        const destination = optionsResolved.destination !== undefined 
-          ? add(boxAfterScroll, optionsResolved.destination) 
+        const destination = optionsResolved.destination !== undefined
+          ? add(boxAfterScroll, optionsResolved.destination)
           : (alreadyInElement ? previous : getRandomBoxPoint(boxAfterScroll, optionsResolved))
 
         // Skip movement if already very close to destination (within 5px)
@@ -728,7 +728,7 @@ export const createCursor = (
     },
 
     /** Moves the mouse to the specified destination point. */
-    async moveTo(destination: Vector, options?: MoveToOptions): Promise<void> {
+    async moveTo (destination: Vector, options?: MoveToOptions): Promise<void> {
       const optionsResolved = {
         moveDelay: 0,
         randomizeMoveDelay: true,
@@ -738,7 +738,7 @@ export const createCursor = (
 
       const wasRandom = !moving
       actions.toggleRandomMove(false)
-      
+
       // Skip movement if already very close to destination (within 5px)
       const distance = Math.sqrt(Math.pow(destination.x - previous.x, 2) + Math.pow(destination.y - previous.y, 2))
       if (distance > 5) {
@@ -755,7 +755,7 @@ export const createCursor = (
     },
 
     /** Scrolls the element into view. If already in view, no scroll occurs. */
-    async scrollIntoView(selector: string | ElementHandle, options?: ScrollIntoViewOptions): Promise<void> {
+    async scrollIntoView (selector: string | ElementHandle, options?: ScrollIntoViewOptions): Promise<void> {
       const optionsResolved = {
         scrollDelay: 200,
         scrollSpeed: 100,
@@ -836,11 +836,11 @@ export const createCursor = (
         // Scale padding based on scroll distance to avoid over-scrolling
         const scrollDistanceY = Math.abs(deltaY)
         const scrollDistanceX = Math.abs(deltaX)
-        
+
         // Use smaller padding for small scrolls, larger for big scrolls (max ±50px)
         const paddingScaleY = Math.min(scrollDistanceY * 0.1, 50)
         const paddingScaleX = Math.min(scrollDistanceX * 0.1, 50)
-        
+
         const randomPaddingY = (Math.random() * 2 - 1) * paddingScaleY // -paddingScaleY to +paddingScaleY
         const randomPaddingX = (Math.random() * 2 - 1) * paddingScaleX // -paddingScaleX to +paddingScaleX
 
@@ -868,7 +868,7 @@ export const createCursor = (
     },
 
     /** Scrolls the page the distance set by `delta`. */
-    async scroll(delta: Partial<Vector>, options?: ScrollOptions) {
+    async scroll (delta: Partial<Vector>, options?: ScrollOptions) {
       const optionsResolved = {
         scrollDelay: 200,
         scrollSpeed: 100,
@@ -891,7 +891,7 @@ export const createCursor = (
     },
 
     /** Scrolls to the specified destination point. */
-    async scrollTo(destination: ScrollToDestination, options?: ScrollOptions) {
+    async scrollTo (destination: ScrollToDestination, options?: ScrollOptions) {
       const optionsResolved = {
         scrollDelay: 200,
         scrollSpeed: 100,
@@ -931,7 +931,7 @@ export const createCursor = (
     },
 
     /** Gets the element via a selector. Can use an XPath. */
-    async getElement(selector: string | ElementHandle, options?: GetElementOptions): Promise<ElementHandle<Element>> {
+    async getElement (selector: string | ElementHandle, options?: GetElementOptions): Promise<ElementHandle<Element>> {
       const optionsResolved = {
         ...defaultOptions?.getElement,
         ...options
