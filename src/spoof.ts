@@ -1,4 +1,4 @@
-import type { ElementHandle, Page, CDPSession } from 'playwright'
+import type { ElementHandle, Page, CDPSession, Locator } from 'playwright'
 import debug from 'debug'
 import { type Vector, type TimedVector, origin, add, clamp, scale } from './math'
 import { installMouseHelper } from './mouse-helper'
@@ -161,19 +161,19 @@ export interface GhostCursor {
   /** Toggles random mouse movements on or off. */
   toggleRandomMove: (random: boolean) => void
   /** Simulates a mouse click at the specified selector or element. */
-  click: (selector?: string | ElementHandle, options?: ClickOptions) => Promise<void>
+  click: (selector?: string | ElementHandle | Locator, options?: ClickOptions) => Promise<void>
   /** Moves the mouse to the specified selector or element. */
-  move: (selector: string | ElementHandle, options?: MoveOptions) => Promise<void>
+  move: (selector: string | ElementHandle | Locator, options?: MoveOptions) => Promise<void>
   /** Moves the mouse to the specified destination point. */
   moveTo: (destination: Vector, options?: MoveToOptions) => Promise<void>
   /** Scrolls the element into view. If already in view, no scroll occurs. */
-  scrollIntoView: (selector: ElementHandle, options?: ScrollIntoViewOptions) => Promise<void>
+  scrollIntoView: (selector: string | ElementHandle | Locator, options?: ScrollIntoViewOptions) => Promise<void>
   /** Scrolls to the specified destination point. */
   scrollTo: (destination: ScrollToDestination, options?: ScrollOptions) => Promise<void>
   /** Scrolls the page the distance set by `delta`. */
   scroll: (delta: Partial<Vector>, options?: ScrollOptions) => Promise<void>
   /** Gets the element via a selector. Can use an XPath. */
-  getElement: (selector: string | ElementHandle, options?: GetElementOptions) => Promise<ElementHandle<Element>>
+  getElement: (selector: string | ElementHandle | Locator, options?: GetElementOptions) => Promise<ElementHandle<Element>>
   /** Get current location of the cursor. */
   getLocation: () => Vector
   /**
@@ -499,7 +499,7 @@ export const createCursor = (
     },
 
     /** Simulates a mouse click at the specified selector or element. */
-    async click (selector?: string | ElementHandle, options?: ClickOptions): Promise<void> {
+    async click (selector?: string | ElementHandle | Locator, options?: ClickOptions): Promise<void> {
       const optionsResolved = {
         moveDelay: 50 + Math.random() * 100, // 50-150ms delay for human-like pacing
         hesitate: 0,
@@ -523,8 +523,8 @@ export const createCursor = (
           moveDelay: 0
         })
 
-        // Get the ElementHandle whether it's a string or already an ElementHandle
-        elementToClick = typeof selector === 'string'
+        // Get the ElementHandle whether it's a string, Locator, or already an ElementHandle
+        elementToClick = typeof selector === 'string' || 'elementHandle' in selector
           ? await actions.getElement(selector)
           : selector
       }
@@ -549,7 +549,7 @@ export const createCursor = (
     },
 
     /** Moves the mouse to the specified selector or element. */
-    async move (selector: string | ElementHandle, options?: MoveOptions): Promise<void> {
+    async move (selector: string | ElementHandle | Locator, options?: MoveOptions): Promise<void> {
       const optionsResolved = {
         moveDelay: 0,
         maxTries: 10,
@@ -637,12 +637,10 @@ export const createCursor = (
       }
       // tracePath updates previous for each point, or we updated it above if skipped
       actions.toggleRandomMove(wasRandom)
-
-      await delay(optionsResolved.moveDelay * (optionsResolved.randomizeMoveDelay ? Math.random() : 1))
     },
 
     /** Scrolls the element into view. If already in view, no scroll occurs. */
-    async scrollIntoView (selector: string | ElementHandle, options?: ScrollIntoViewOptions): Promise<void> {
+    async scrollIntoView (selector: string | ElementHandle | Locator, options?: ScrollIntoViewOptions): Promise<void> {
       const optionsResolved = {
         scrollDelay: 200,
         scrollSpeed: 100,
@@ -651,13 +649,15 @@ export const createCursor = (
         ...options
       } satisfies ScrollIntoViewOptions
 
-      const elem = await this.getElement(selector, optionsResolved)
+      const elem = typeof selector === 'string' || 'elementHandle' in selector
+        ? await actions.getElement(selector, optionsResolved)
+        : selector
 
-      const { viewportWidth, viewportHeight, docHeight, docWidth, scrollPositionTop, scrollPositionLeft } = await page.evaluate(() => ({
-        viewportWidth: document.body.clientWidth,
-        viewportHeight: document.body.clientHeight,
+      const { docHeight, docWidth, viewportHeight, viewportWidth, scrollPositionTop, scrollPositionLeft } = await page.evaluate(() => ({
         docHeight: document.body.scrollHeight,
         docWidth: document.body.scrollWidth,
+        viewportHeight: window.innerHeight,
+        viewportWidth: window.innerWidth,
         scrollPositionTop: window.scrollY,
         scrollPositionLeft: window.scrollX
       }))
@@ -818,7 +818,7 @@ export const createCursor = (
     },
 
     /** Gets the element via a selector. Can use an XPath. */
-    async getElement (selector: string | ElementHandle, options?: GetElementOptions): Promise<ElementHandle<Element>> {
+    async getElement (selector: string | ElementHandle | Locator, options?: GetElementOptions): Promise<ElementHandle<Element>> {
       const optionsResolved = {
         ...defaultOptions?.getElement,
         ...options
@@ -839,6 +839,15 @@ export const createCursor = (
         }
         if (elem === null) {
           throw new Error(`Could not find element with selector "${selector}", make sure you're waiting for the elements by specifying "waitForSelector"`)
+        }
+      } else if ('elementHandle' in selector) {
+        // Locator - convert to ElementHandle
+        if (optionsResolved.waitForSelector !== undefined) {
+          await selector.waitFor({ timeout: optionsResolved.waitForSelector })
+        }
+        elem = await selector.elementHandle()
+        if (elem === null) {
+          throw new Error('Could not find element from Locator')
         }
       } else {
         // ElementHandle
